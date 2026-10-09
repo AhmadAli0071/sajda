@@ -49,8 +49,8 @@ class AyahNotificationService {
     final now = tz.TZDateTime.now(location);
     final dayOfYear = now.difference(tz.TZDateTime(location, now.year)).inDays;
 
-    var when = DateTime(now.year, now.month, now.day, hour, minute);
-    if (when.isBefore(DateTime.now())) {
+    var when = tz.TZDateTime(location, now.year, now.month, now.day, hour, minute);
+    if (when.isBefore(now)) {
       when = when.add(const Duration(days: 1));
     }
     final (surah, ayah) = QuranService.ayahForDay(dayOfYear);
@@ -60,7 +60,7 @@ class AyahNotificationService {
       id: _baseId,
       title: 'Ayah of the Day • ${q.getSurahNameEnglish(surah)} $ayah',
       body: body,
-      scheduledDate: tz.TZDateTime.from(when, location),
+      scheduledDate: when,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'daily_ayah',

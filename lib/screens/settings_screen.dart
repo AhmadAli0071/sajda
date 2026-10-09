@@ -44,7 +44,7 @@ class SettingsScreen extends StatelessWidget {
         try {
           final times = await ApiClient.instance.getPrayerTimesFor(state, useCache: false);
           await PrayerNotificationService.instance
-              .scheduleAll(times.prayers, isUrdu: state.isUrdu, prayerModes: state.prayerNotificationModes, city: state.displayCityName);
+              .scheduleAll(times.prayers, isUrdu: state.isUrdu, timezone: state.locationTimezone, prayerModes: state.prayerNotificationModes, city: state.displayCityName);
         } catch (e) {
           if (!context.mounted) return;
           showAppSnack(context, state.t('Could not schedule alerts: ${e.toString()}', 'الرٹس شیڈول نہیں ہوئے: ${e.toString()}'), error: true);
@@ -69,7 +69,7 @@ class SettingsScreen extends StatelessWidget {
     try {
       final times = await ApiClient.instance.getPrayerTimesFor(state, useCache: false);
       await PrayerNotificationService.instance
-          .scheduleAll(times.prayers, isUrdu: state.isUrdu, prayerModes: state.prayerNotificationModes, city: state.displayCityName);
+          .scheduleAll(times.prayers, isUrdu: state.isUrdu, timezone: state.locationTimezone, prayerModes: state.prayerNotificationModes, city: state.displayCityName);
     } catch (_) {}
   }
 
@@ -658,6 +658,7 @@ class _ExactAzanTileState extends State<_ExactAzanTile> {
         await PrayerNotificationService.instance.scheduleAll(
           times.prayers,
           isUrdu: state.isUrdu,
+          timezone: state.locationTimezone,
           prayerModes: state.prayerNotificationModes,
           city: state.displayCityName,
         );

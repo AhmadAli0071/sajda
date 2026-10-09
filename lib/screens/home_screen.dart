@@ -10,6 +10,7 @@ import '../config.dart';
 import '../models/models.dart';
 import '../services/allah_names.dart';
 import '../services/api_client.dart';
+import '../services/date_service.dart';
 import '../services/quran_service.dart';
 import '../state/app_state.dart';
 import '../state/streak_state.dart';
@@ -152,7 +153,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// hero with "Ends in"; in the gaps (e.g. after sunrise) the hero flips
   /// to the NEXT prayer with a "Starts in" countdown.
   _PrayerClock? _computeClock(PrayerTimesResponse times) {
-    final now = DateTime.now();
+    // "now" must be the location's wall-clock, matching the prayer times —
+    // DateTime.now() is the device clock and highlights the wrong prayer
+    // whenever the device timezone differs from the selected location.
+    final now = dateService.nowInTimezone(context.read<AppState>().locationTimezone);
     final w = computePrayerWindow(times.prayers, now);
     if (w == null) return null;
 

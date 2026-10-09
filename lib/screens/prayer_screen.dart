@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
 import '../data/static_data.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
+import '../services/date_service.dart';
 import '../services/prayer_notification_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -88,31 +88,22 @@ class _PrayerScreenState extends State<PrayerScreen> {
   Future<void> _useLocation() async {
     final state = context.read<AppState>();
     try {
-      final hasPermission = await Geolocator.checkPermission();
-      if (hasPermission == LocationPermission.denied) {
-        final req = await Geolocator.requestPermission();
-        if (req == LocationPermission.denied) {
-          if (mounted) {
-            showAppSnack(context, state.t('Location permission denied', 'مقام کی اجازت مسترد ہے۔ براہ کرم سیٹنگز میں فعال کریں'), error: true);
-          }
-          return;
-        }
-      }
-      final pos = await Geolocator.getCurrentPosition();
-      final city = nearestCity(pos.latitude, pos.longitude);
-      if (city != null) {
-        await state.setCity(city);
-        if (mounted) {
-          showAppSnack(context,
-              '${state.t('Nearest city', 'قریب ترین شہر')}: ${city.name} (${haversineKm(pos.latitude, pos.longitude, city.lat, city.lng).toStringAsFixed(0)} km)');
-        }
+      // Delegate to AppState.detectLocation: it handles permission, GPS,
+      // reverse-geocode, timezone resolution, and persists lat/lng/location.
+      // (Previously this set only the city label, leaving the coordinates
+      // stale so times still came from the old location.)
+      final ok = await state.detectLocation();
+      if (!mounted) return;
+      if (ok) {
+        showAppSnack(context,
+            '${state.t('Location updated', 'مقام اپ ڈیٹ ہو گیا')}: ${state.displayCityName}');
         _load();
-      } else if (mounted) {
-          showAppSnack(context, state.t('No nearby city found', 'قریبین شہر نہیں ملا'), error: true);
+      } else {
+        showAppSnack(context, state.t('Could not get location', 'مقام حاصل نہیں کیا جا سکا'), error: true);
       }
     } catch (e) {
       if (mounted) {
-          showAppSnack(context, state.t('Could not get location', 'مقام حاصل نہیں کیا جا سکا'), error: true);
+        showAppSnack(context, state.t('Could not get location', 'مقام حاصل نہیں کیا جا سکا'), error: true);
       }
     }
   }
@@ -353,8 +344,9 @@ class _PrayerScreenState extends State<PrayerScreen> {
     if (times.prayers.isEmpty) return null;
     // Same rules as the home card: highlight the prayer whose OWN window
     // is still open (Fajr only until sunrise); in the gaps highlight the
-    // next upcoming prayer instead.
-    final w = computePrayerWindow(times.prayers, DateTime.now());
+    // next upcoming prayer instead. "now" is the location's wall-clock.
+    final w = computePrayerWindow(
+        times.prayers, dateService.nowInTimezone(context.read<AppState>().locationTimezone));
     if (w == null) return null;
     final focus = w.current ?? w.next;
     final i = times.prayers.indexWhere((p) => p.name == focus.name);
@@ -362,7 +354,10 @@ class _PrayerScreenState extends State<PrayerScreen> {
   }
 
   String? _activePrayerName(PrayerTimesResponse times) =>
-      computePrayerWindow(times.prayers, DateTime.now())?.current?.name;
+      computePrayerWindow(
+              times.prayers, dateService.nowInTimezone(context.read<AppState>().locationTimezone))
+          ?.current
+          ?.name;
 
   IconData _prayerIcon(String name) {
     switch (name) {

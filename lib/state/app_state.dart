@@ -308,17 +308,23 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (!notificationsEnabled) return;
     try {
       final times = await ApiClient.instance.getPrayerTimesFor(this);
-      await PrayerNotificationService.instance
-          .scheduleAll(times.prayers, isUrdu: isUrdu, prayerModes: prayerNotificationModes);
+      await PrayerNotificationService.instance.scheduleAll(
+        times.prayers,
+        isUrdu: isUrdu,
+        timezone: locationTimezone,
+        prayerModes: prayerNotificationModes,
+        city: displayCityName,
+      );
     } catch (_) {}
   }
 
   /// Auto-detect location from GPS.
   /// If [silent] is true, won't overwrite an existing manual location.
-  Future<void> detectLocation({bool silent = false}) async {
+  /// Returns true when a GPS location was resolved and applied.
+  Future<bool> detectLocation({bool silent = false}) async {
     try {
       if (silent && _location != null && _location!.isManual) {
-        return;
+        return false;
       }
 
       final permission = await Geolocator.checkPermission();
@@ -326,7 +332,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         final req = await Geolocator.requestPermission();
         if (req == LocationPermission.denied ||
             req == LocationPermission.deniedForever) {
-          return;
+          return false;
         }
       }
       Position? pos;
@@ -341,7 +347,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         pos = null;
       }
       pos ??= await Geolocator.getLastKnownPosition();
-      if (pos == null || (pos.latitude == 0 && pos.longitude == 0)) return;
+      if (pos == null || (pos.latitude == 0 && pos.longitude == 0)) return false;
 
       final lat = pos.latitude;
       final lng = pos.longitude;
@@ -352,7 +358,14 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       String country = nearest?.country ?? '';
       String state = '';
       String countryCode = '';
-      String timezone = nearest?.timezone ?? 'Asia/Karachi';
+      // Resolve the real IANA zone from coordinates. nearestCity() has no
+      // distance cap, so GPS users outside the 27-city table would otherwise
+      // inherit the timezone of the nearest listed city (wrong for most of
+      // the world, e.g. Berlin -> Europe/Istanbul).
+      String timezone = await _resolveTimezone(lat, lng);
+      if (timezone == 'Asia/Karachi' && nearest != null) {
+        timezone = nearest.timezone;
+      }
 
       if (name != null) {
         final parts = name.split(',');
@@ -379,7 +392,10 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       );
 
       await setLocation(loc, notify: true);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Global forward geocoding search via Nominatim.

@@ -104,7 +104,12 @@ class PrayerTime {
   final String time;
   PrayerTime(this.name, this.time);
   factory PrayerTime.fromJson(Map<String, dynamic> json) =>
-      PrayerTime(_s(json['name']), _s(json['time']));
+      // AlAdhan's city endpoint returns "05:47 (PKT)"; strip the parenthetical
+      // so every consumer sees a clean "HH:mm" (prayer_window._dt would
+      // otherwise return null and the `!` on Fajr would throw).
+      PrayerTime(
+          _s(json['name']),
+          _s(json['time']).replaceAll(RegExp(r'\s*\(.*\)'), '').trim());
 }
 
 class HijriInfo {

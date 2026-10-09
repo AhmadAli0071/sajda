@@ -49,7 +49,7 @@ class PrayerCheckinService {
       final minute = int.tryParse(parts[1]);
       if (hour == null || minute == null) continue;
 
-      var prayerTime = tz.TZDateTime.from(DateTime(now.year, now.month, now.day, hour, minute), location);
+      var prayerTime = tz.TZDateTime(location, now.year, now.month, now.day, hour, minute);
       if (prayerTime.isBefore(now)) {
         prayerTime = prayerTime.add(const Duration(days: 1));
       }

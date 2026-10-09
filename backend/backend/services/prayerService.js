@@ -2,15 +2,17 @@ import axios from 'axios';
 
 const AL_ADHAN_BASE = 'http://api.aladhan.com/v1';
 
-export const getPrayerTimesFromAPI = async (city, country, method = 3, school = 1) => {
+export const getPrayerTimesFromAPI = async (city, country, method = 3, school = 1, date = null) => {
   try {
+    const params = { city, country, method, school };
+    if (date) {
+      // Clients send YYYY-MM-DD; AlAdhan expects DD-MM-YYYY. Without this
+      // the calendar day-sheet would always show today's times.
+      const [y, m, d] = String(date).split('-');
+      if (y && m && d) params.date = `${d}-${m}-${y}`;
+    }
     const response = await axios.get(`${AL_ADHAN_BASE}/timingsByCity`, {
-      params: {
-        city,
-        country,
-        method,
-        school,
-      },
+      params,
     });
 
     const data = response.data.data;

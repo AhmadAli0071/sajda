@@ -176,8 +176,16 @@ class ApiClient {
 
   Future<PrayerTimesResponse> _getAladhanPrayerTimes(
       double lat, double lng, String timezone, String dateStr, int method, int school) async {
+    // AlAdhan's /timings/{date} path expects DD-MM-YYYY. We store dates as
+    // YYYY-MM-DD everywhere else, so convert here — sending YYYY-MM-DD makes
+    // AlAdhan silently misread the YEAR (e.g. 2026-10-09 -> 09 Oct 2009),
+    // which applies outdated DST rules and throws every prayer off by an hour.
+    final dateParts = dateStr.split('-');
+    final aladhanDate = dateParts.length == 3
+        ? '${dateParts[2]}-${dateParts[1]}-${dateParts[0]}'
+        : dateStr;
     final uri = Uri.parse(
-        'https://api.aladhan.com/v1/timings/$dateStr?latitude=$lat&longitude=$lng&timezone=${Uri.encodeQueryComponent(timezone)}&method=$method&school=$school');
+        'https://api.aladhan.com/v1/timings/$aladhanDate?latitude=$lat&longitude=$lng&timezone=${Uri.encodeQueryComponent(timezone)}&method=$method&school=$school');
     final res = await http.get(uri, headers: {'User-Agent': 'SajdaDataplus/1.0'});
     if (res.statusCode >= 400) throw ApiException('AlAdhan HTTP ${res.statusCode}');
     final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -189,7 +197,6 @@ class ApiClient {
       if (time.isNotEmpty) prayers.add(PrayerTime(name, time));
     }
 
-    final dateParts = dateStr.split('-');
     final gregorianDate = DateTime(
       int.parse(dateParts[0]),
       int.parse(dateParts[1]),

@@ -107,6 +107,23 @@ class DateService {
     }
   }
 
+  /// Current wall-clock as a naive DateTime in [timezone].
+  ///
+  /// [computePrayerWindow] compares prayer times (location wall-clock
+  /// strings) against a "now" DateTime; feeding it DateTime.now() (device
+  /// clock) highlights the wrong current/next prayer whenever the device
+  /// timezone differs from the selected location (travel).
+  DateTime nowInTimezone(String timezone) {
+    _ensureTzInitialized();
+    try {
+      final location = tz.getLocation(timezone);
+      final zoned = tz.TZDateTime.now(location);
+      return DateTime(zoned.year, zoned.month, zoned.day, zoned.hour, zoned.minute);
+    } catch (_) {
+      return DateTime.now();
+    }
+  }
+
   /// Parses YYYY-MM-DD into a local DateTime at midnight.
   DateTime parseDate(String dateStr) {
     final parts = dateStr.split('-');
