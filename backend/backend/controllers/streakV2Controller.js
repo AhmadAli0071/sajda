@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
+import { timingSafeEqual } from 'node:crypto';
 import User from '../models/User.js';
 import SoloStreak from '../models/SoloStreak.js';
 import SoloDailyProgress from '../models/SoloDailyProgress.js';
@@ -428,6 +429,39 @@ const requireMembership = async (res, groupId, userId, { activeOnly = true } = {
   return { group, member };
 };
 
+// ── Capacity: atomic slot reservation ─────────────────────────────────────
+// `memberCount` IS the reservation counter. Admission is a single atomic
+// findOneAndUpdate ($inc guarded by the limit), so two concurrent joins can
+// never both take the last slot — the old countDocuments() -> check ->
+// insert sequence could overshoot maxMembers (no replica set here, so no
+// transactions to lean on).
+//
+// Drift only ever makes the group look FULLER (fail-closed): a crash between
+// reserve and insert leaves a phantom slot, never an extra member.
+// scripts/repairGhostMembers.js reconciles it back to the real count.
+const reserveGroupSlot = async (groupId) =>
+  Group.findOneAndUpdate(
+    {
+      groupId,
+      status: 'active',
+      $expr: { $lt: ['$memberCount', GROUP_MEMBER_LIMIT_DEFAULT] },
+    },
+    { $inc: { memberCount: 1 } },
+    { new: true },
+  );
+
+const releaseGroupSlot = async (groupId) => {
+  try {
+    await Group.updateOne(
+      { groupId, $expr: { $gt: ['$memberCount', 0] } },
+      { $inc: { memberCount: -1 } },
+    );
+  } catch (e) {
+    // Best effort: a leaked slot only makes the group stricter, never wider.
+    console.warn('[streak] slot release failed:', e.message);
+  }
+};
+
 const addMemberToGroup = async (group, user, role = 'member') => {
   const effectiveFrom = effectiveFromForJoin(new Date(), group.timezone);
   const existing = await memberOf(group.groupId, user.id);
@@ -447,9 +481,9 @@ const addMemberToGroup = async (group, user, role = 'member') => {
       displayName: user.displayName, role, status: 'active', effectiveFromDate: effectiveFrom,
     });
   }
-  const count = await GroupMember.countDocuments({ groupId: group.groupId, status: 'active' });
-  group.memberCount = count;
-  await group.save();
+  // NOTE: memberCount is NOT recounted here. Callers reserve a slot first
+  // (atomic $inc) — a blind recount would overwrite a concurrent reservation
+  // and re-open the maxMembers race.
   await GroupActivity.create({
     groupId: group.groupId, userId: new mongoose.Types.ObjectId(user.id),
     displayName: user.displayName, type: 'member_joined',
@@ -824,11 +858,19 @@ export const joinByInviteCode = async (req, res, next) => {
         data: { alreadyMember: true, groupId: group.groupId, name: group.name, message: 'You are already a member of this group' },
       });
     }
-    const activeCount = await GroupMember.countDocuments({ groupId: group.groupId, status: 'active' });
-    if (activeCount >= GROUP_MEMBER_LIMIT_DEFAULT) {
+    // Atomic capacity check + reservation — two parallel joins with the same
+    // invite code can no longer both slip past the last open slot.
+    const reserved = await reserveGroupSlot(group.groupId);
+    if (!reserved) {
       return fail(res, 400, 'GROUP_FULL', 'This group has reached its member limit');
     }
-    await addMemberToGroup(group, user);
+    try {
+      await addMemberToGroup(group, user);
+    } catch (e) {
+      await releaseGroupSlot(group.groupId);
+      throw e;
+    }
+    group.memberCount = reserved.memberCount;
     // Cancel any pending request — the user is in.
     await JoinRequest.updateOne(
       { groupId: group.groupId, userId: new mongoose.Types.ObjectId(user.id), status: 'pending' },
@@ -1018,12 +1060,19 @@ const decideRequest = async (req, res, approve) => {
     return fail(res, 403, 'FORBIDDEN', 'You cannot decide your own request');
   }
   if (approve) {
-    const activeCount = await GroupMember.countDocuments({ groupId: request.groupId, status: 'active' });
-    if (activeCount >= GROUP_MEMBER_LIMIT_DEFAULT) {
+    // Reserve before admitting (same atomic guard as direct invite joins).
+    const reserved = await reserveGroupSlot(request.groupId);
+    if (!reserved) {
       return fail(res, 400, 'GROUP_FULL', 'This group has reached its member limit');
     }
-    const target = await User.findById(request.userId).select('displayName').lean();
-    await addMemberToGroup(group, { id: String(request.userId), displayName: target?.displayName || request.displayName });
+    try {
+      const target = await User.findById(request.userId).select('displayName').lean();
+      await addMemberToGroup(group, { id: String(request.userId), displayName: target?.displayName || request.displayName });
+    } catch (e) {
+      await releaseGroupSlot(request.groupId);
+      throw e;
+    }
+    group.memberCount = reserved.memberCount;
   }
   request.status = approve ? 'approved' : 'declined';
   request.decidedAt = new Date();
@@ -1066,11 +1115,14 @@ export const leaveGroup = async (req, res, next) => {
     if (member.role === 'owner') {
       return fail(res, 400, 'OWNER_MUST_TRANSFER', 'Transfer ownership or archive the group before leaving');
     }
+    const wasActive = member.status === 'active';
     member.status = 'left';
     member.leftAt = new Date();
     await member.save();
-    group.memberCount = await GroupMember.countDocuments({ groupId, status: 'active' });
-    await group.save();
+    // Exactly one atomic decrement per active -> inactive transition. A
+    // countDocuments() recount here would overwrite a concurrent join's
+    // reservation and silently re-open the maxMembers race.
+    if (wasActive) await releaseGroupSlot(groupId);
     await GroupActivity.create({
       groupId, userId: new mongoose.Types.ObjectId(user.id),
       displayName: user.displayName, type: 'member_left',
@@ -1104,8 +1156,8 @@ export const removeMember = async (req, res, next) => {
     target.status = 'removed';
     target.leftAt = new Date();
     await target.save();
-    group.memberCount = await GroupMember.countDocuments({ groupId, status: 'active' });
-    await group.save();
+    // target.status was checked 'active' above — one decrement, no recount.
+    await releaseGroupSlot(groupId);
     await GroupActivity.create({
       groupId, userId: new mongoose.Types.ObjectId(userId),
       displayName: target.displayName, type: 'member_removed',
@@ -1281,13 +1333,33 @@ export const registerDevice = async (req, res, next) => {
 // orphans the old account (and any groups it owns). These endpoints let the
 // operator look the group up and mint a fresh token for its owner, who can
 // then re-link their device via POST /api/auth/link-device.
-// Guarded by a one-time repair key. REMOVE after use.
+//
+// Guarded by STREAK_REPAIR_KEY from the environment. The key is NOT in
+// source: without the env var both endpoints return 404 (disabled), so a
+// leaked/historical copy of this file grants nothing. Remove the routes
+// entirely once the recovery window is closed.
 // ─────────────────────────────────────────────────────────────────────────
 
-const REPAIR_KEY = '43c7b7035f9594145b1b693f6192872034786e331a71a63a';
+const repairKeyFromEnv = () => {
+  const key = String(process.env.STREAK_REPAIR_KEY || '').trim();
+  // Refuse a trivially guessable key — better disabled than wide open.
+  return key.length >= 16 ? key : null;
+};
 
-const repairAuthorized = (req) =>
-  String(req.headers['x-repair-key'] || '') === REPAIR_KEY;
+// Constant-time compare so the header can't be brute-forced byte-by-byte.
+// (node:crypto — the global WebCrypto `crypto` has no timingSafeEqual.)
+const safeEqual = (a, b) => {
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+};
+
+const repairAuthorized = (req) => {
+  const key = repairKeyFromEnv();
+  if (!key) return false;
+  return safeEqual(String(req.headers['x-repair-key'] || ''), key);
+};
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
