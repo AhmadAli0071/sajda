@@ -140,10 +140,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // Long windows show hours only so the countdown never ellipsizes in
     // the hero row next to the upcoming-prayer chip.
     if (h > 0) {
-      return state.isUrdu ? '$h ${state.t('h', 'گھنٹے')}' : '$h${state.t('h', '')}h';
+      return state.isUrdu ? '$h گھنٹے' : '${h}h';
     }
     final mm = m == 0 ? 1 : m;
-    return state.isUrdu ? '$mm ${state.t('m', 'منٹ')}' : '$mm${state.t('m', '')}m';
+    return state.isUrdu ? '$mm منٹ' : '${mm}m';
   }
 
   /// Builds the hero card state from the shared per-prayer window rules:
@@ -605,6 +605,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 12),
                         // Ends-in (open window) or starts-in (waiting for
                         // the next prayer) + the upcoming prayer chip.
+                        // The countdown is inflexible so it always renders
+                        // in full; the chip is the flexible part and scales
+                        // down as a whole (never clipped) when space is
+                        // tight — this also keeps the 'Tomorrow' tag
+                        // visible on the next-Fajr chip during the night.
                         Row(
                           children: [
                             Icon(
@@ -615,77 +620,84 @@ class _HomeScreenState extends State<HomeScreen> {
                               size: 15,
                             ),
                             const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                clock.current != null
-                                    ? '${state.t('Ends in', 'باقی')} ${_fmtCountdown(state, clock.endsInSec)}'
-                                    : '${state.t('Starts in', 'شروع ہونے میں')} ${_fmtCountdown(state, clock.endsInSec)}',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              clock.current != null
+                                  ? '${state.t('Ends in', 'باقی')} ${_fmtCountdown(state, clock.endsInSec)}'
+                                  : '${state.t('Starts in', 'شروع ہونے میں')} ${_fmtCountdown(state, clock.endsInSec)}',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.92),
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 10),
                             if (clock.current != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      '${state.t('Next', 'اگلی')}: ',
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.85),
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                              Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
                                     ),
-                                    // Prayer name always renders in full —
-                                    // the countdown text shrinks instead.
-                                    Text(
-                                      lang == 'ur'
-                                          ? (AppStrings.prayerNames[clock.next.name] ??
-                                              clock.next.name)
-                                          : clock.next.name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                      maxLines: 1,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(30),
                                     ),
-                                    Text(
-                                      ' · ${formatTime12(clock.next.time)}',
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.85),
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      maxLines: 1,
-                                    ),
-                                    if (clock.nextIsTomorrow) ...[
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        state.t('Tomorrow', 'کل'),
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(alpha: 0.75),
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w700,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${state.t('Next', 'اگلی')}: ',
+                                          style: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.85),
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ],
+                                        Text(
+                                          lang == 'ur'
+                                              ? (AppStrings.prayerNames[
+                                                      clock.next.name] ??
+                                                  clock.next.name)
+                                              : clock.next.name,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                          maxLines: 1,
+                                        ),
+                                        Text(
+                                          ' · ${formatTime12(clock.next.time)}',
+                                          style: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.85),
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                          maxLines: 1,
+                                        ),
+                                        if (clock.nextIsTomorrow) ...[
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            state.t('Tomorrow', 'کل'),
+                                            style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.75),
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               )
                             else if (clock.nextIsTomorrow)

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hijri/hijri_calendar.dart';
 import 'package:sajda_dataplus/services/date_service.dart';
 import 'package:sajda_dataplus/services/hijri_date_service.dart';
 
@@ -77,45 +78,43 @@ void main() {
     });
   });
 
-  group('HijriDateService — Maghrib Islamic-day boundary', () {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
+  group('HijriDateService — user adjustment, printed-calendar convention', () {
+    final date = DateTime(2024, 1, 15);
 
-    test('before Maghrib returns plain conversion of today', () {
-      final result = HijriDateService.getHijriDate(
-        today,
-        maghribTime: DateTime(today.year, today.month, today.day, 23, 59),
-      );
-      final plain = HijriDateService.convertPlain(today);
-      expect(result.day, plain.day);
-      expect(result.month, plain.month);
-      expect(result.year, plain.year);
+    test('no Maghrib shift: any date converts plainly', () {
+      // One Hijri date per Gregorian day; no evening advance.
+      expect(HijriDateService.getHijriDate(date).day,
+          HijriDateService.convertPlain(date).day);
+      expect(HijriDateService.getTodayHijri().day,
+          HijriDateService.convertPlain(DateTime.now()).day);
     });
 
-    test('after Maghrib advances to next Islamic day', () {
-      // Maghrib at 00:00 -> "now" is always at/after Maghrib.
-      final result = HijriDateService.getHijriDate(
-        today,
-        maghribTime: DateTime(today.year, today.month, today.day, 0, 0),
-      );
-      // Ground truth: plain conversion of tomorrow (its default 18:30 Maghrib
-      // has not occurred yet, so no double shift).
-      final expected = HijriDateService.getHijriDate(
-        tomorrow,
-        maghribTime: DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 59),
-      );
-      expect(result.day, expected.day);
-      expect(result.month, expected.month);
-      expect(result.year, expected.year);
+    test('adjustDays +2 shifts the displayed date two days ahead', () {
+      final base = HijriDateService.convertPlain(date);
+      HijriDateService.adjustDays = 2;
+      addTearDown(() => HijriDateService.adjustDays = 0);
+      final shifted = HijriDateService.convertPlain(date);
+      // Ground truth: raw Umm al-Qura of (date + 2 days).
+      final raw = HijriCalendar.fromDate(DateTime(2024, 1, 17));
+      expect(shifted.day, raw.hDay);
+      expect(shifted.day, base.day + 2);
+      expect(shifted.month, base.month);
     });
 
-    test('arbitrary (non-today) dates convert plainly with no shift', () {
-      final past = DateTime(2024, 1, 15);
-      final result = HijriDateService.getHijriDate(past);
-      final plain = HijriDateService.convertPlain(past);
-      expect(result.day, plain.day);
-      expect(result.month, plain.month);
+    test('adjustDays -1 shifts the displayed date one day back', () {
+      HijriDateService.adjustDays = -1;
+      addTearDown(() => HijriDateService.adjustDays = 0);
+      final raw = HijriCalendar.fromDate(DateTime(2024, 1, 14));
+      final shifted = HijriDateService.convertPlain(date);
+      expect(shifted.day, raw.hDay);
+    });
+
+    test('adjustDays reset restores the plain conversion', () {
+      HijriDateService.adjustDays = 2;
+      addTearDown(() => HijriDateService.adjustDays = 0);
+      HijriDateService.adjustDays = 0;
+      final raw = HijriCalendar.fromDate(date);
+      expect(HijriDateService.convertPlain(date).day, raw.hDay);
     });
 
     test('HijriDateInfo formatting', () {

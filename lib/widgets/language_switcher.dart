@@ -11,6 +11,19 @@ const List<(String, String)> kContentLanguages = [
   ('id', 'Indonesia'),
 ];
 
+/// Adhkar (Hisnul Muslim) offers only Arabic + English in its menu — the
+/// bundled dataset is Arabic and just English is offered as the translation,
+/// so ur/hi/id are deliberately excluded even though Ayat of the Day ships
+/// all five.
+const List<(String, String)> kAdhkarLanguages = [
+  ('ar', 'عربی'),
+  ('en', 'English'),
+];
+
+/// Snaps a global content language down to one Adhkar actually offers so the
+/// menu never shows an unselectable value (e.g. global 'hi' → 'en').
+String adhkarLangFor(String code) => code == 'ar' ? 'ar' : 'en';
+
 /// Compact filter-chip row for picking the content translation language.
 /// Renders top-corner inside the Ayat of the Day card.
 class ContentLanguageChips extends StatelessWidget {
@@ -80,10 +93,15 @@ class ContentLanguageChips extends StatelessWidget {
 class ContentLanguageMenu extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
+
+  /// Languages to offer — defaults to the full Ayat-of-the-Day set; pass
+  /// [kAdhkarLanguages] on Adhkar screens to restrict to Arabic + English.
+  final List<(String, String)> languages;
   const ContentLanguageMenu({
     super.key,
     required this.selected,
     required this.onChanged,
+    this.languages = kContentLanguages,
   });
 
   @override
@@ -93,7 +111,7 @@ class ContentLanguageMenu extends StatelessWidget {
       tooltip: 'Language',
       icon: const Icon(Icons.translate_rounded),
       itemBuilder: (ctx) => [
-        for (final (code, label) in kContentLanguages)
+        for (final (code, label) in languages)
           PopupMenuItem<String>(
             value: code,
             child: Row(

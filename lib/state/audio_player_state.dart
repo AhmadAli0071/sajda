@@ -113,13 +113,31 @@ class AudioPlayerState extends ChangeNotifier {
 
   void _subscribe(AudioPlayer player) {
     _stateSub = player.playerStateStream.listen((state) {
+      // Stray events from an aborted load can still arrive after stop()
+      // (just_audio warns about unconsumed events on platform switches).
+      // Never let them resurrect `playing` once nothing is loaded.
+      if (!hasAudio) return;
+      // Ground truth: the media is loaded (ready = audible/imminent). Any
+      // lingering play() bookkeeping await must not keep the loader spinning
+      // (e.g. a dropped platform response leaves `await play()` hung on some
+      // devices while audio is already playing) — clear it here.
+      var changed = false;
+      if (_loading && state.processingState == ProcessingState.ready) {
+        _loading = false;
+        changed = true;
+      }
       if (_playing != state.playing) {
         _playing = state.playing;
-        notifyListeners();
+        changed = true;
       }
+      if (changed) notifyListeners();
     });
     _processingSub = player.processingStateStream.listen((state) {
-      final buffering = state == ProcessingState.buffering;
+      // An interrupted load can emit a trailing `buffering` AFTER stop() has
+      // already reset the flags — and no `idle` ever follows it, so the
+      // play-button loader spun forever. Only trust these events while
+      // something is actually loaded.
+      final buffering = state == ProcessingState.buffering && hasAudio;
       if (_buffering != buffering) {
         _buffering = buffering;
         notifyListeners();
@@ -312,21 +330,27 @@ class AudioPlayerState extends ChangeNotifier {
 
   Future<void> stop() async {
     _token++;
-    await _handler?.stop();
-    currentSurah = null;
-    radioStation = null;
-    _ayahIndex = 0;
-    _ayahCount = 0;
-    _position = Duration.zero;
-    _duration = null;
-    _playing = false;
-    _loading = false;
-    // The processing-state stream may never emit again after an abrupt stop,
-    // leaving `buffering` stuck true — which kept the play-button loader
-    // spinning forever. Reset it explicitly.
-    _buffering = false;
-    _error = null;
-    notifyListeners();
+    try {
+      await _handler?.stop();
+    } catch (_) {
+      // A failing native stop must never leave the UI stuck with a dead
+      // player — the state reset below runs either way.
+    } finally {
+      currentSurah = null;
+      radioStation = null;
+      _ayahIndex = 0;
+      _ayahCount = 0;
+      _position = Duration.zero;
+      _duration = null;
+      _playing = false;
+      _loading = false;
+      // The processing-state stream may never emit again after an abrupt
+      // stop, leaving `buffering` stuck true — which kept the play-button
+      // loader spinning forever. Reset it explicitly.
+      _buffering = false;
+      _error = null;
+      notifyListeners();
+    }
   }
 
   void clearError() {

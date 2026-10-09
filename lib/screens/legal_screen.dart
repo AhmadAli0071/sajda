@@ -181,7 +181,7 @@ class LegalScreen extends StatelessWidget {
               children: [
                 Text(state.t('App Version', 'ایپ ورژن'), style: theme.textTheme.titleMedium),
                 const SizedBox(height: 6),
-                Text('Sajda: Daily Athan & Qibla v1.0.2', style: theme.textTheme.bodySmall),
+                Text('Sajda: Daily Athan & Qibla v1.0.3', style: theme.textTheme.bodySmall),
                 Text('Package: com.sajda.dataplus', style: theme.textTheme.bodySmall),
               ],
             ),

@@ -14,8 +14,8 @@ import 'services/azkar_audio_provider.dart';
 import 'services/deep_link_service.dart';
 import 'services/dua_notification_service.dart';
 import 'services/firebase_auth_service.dart';
+import 'services/notification_router.dart';
 import 'services/prayer_notification_service.dart';
-import 'services/push_service.dart';
 import 'services/quran_translation_provider.dart';
 import 'services/tafsir_provider.dart';
 import 'services/wazifa_notification_service.dart';
@@ -41,6 +41,10 @@ Future<void> main() async {
       systemNavigationBarDividerColor: Colors.transparent,
     ),
   );
+  // ONE initialize() for the shared FlutterLocalNotificationsPlugin singleton
+  // — every notification service routes taps through NotificationRouter.
+  // A per-service initialize() stole the tap callback from the others.
+  await NotificationRouter.instance.ensureInitialized();
   await PrayerNotificationService.instance.init();
   await DuaNotificationService.instance.init();
   await WazifaNotificationService.instance.init();
@@ -90,8 +94,8 @@ class SajdaApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Sajda: Daily Athan & Qibla',
-      // Notification taps route through this key (PushService).
-      navigatorKey: PushService.navigatorKey,
+      // Notification taps route through this key (NotificationRouter).
+      navigatorKey: NotificationRouter.navigatorKey,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: state.themeMode,
@@ -118,9 +122,18 @@ class SajdaApp extends StatelessWidget {
                 isDark ? Brightness.light : Brightness.dark,
             systemNavigationBarDividerColor: Colors.transparent,
           ),
-          child: Directionality(
-            textDirection: isUrdu ? TextDirection.rtl : TextDirection.ltr,
-            child: child ?? const SizedBox.shrink(),
+          child: SafeArea(
+            // Edge-to-edge is on, so keep the WHOLE app above the system
+            // navigation bar: devices with a navbar get their content
+            // lifted above it (padding.bottom > 0), devices without one
+            // have padding.bottom == 0 and stay truly full screen. Top is
+            // left to each screen's AppBar/SafeArea.
+            top: false,
+            bottom: true,
+            child: Directionality(
+              textDirection: isUrdu ? TextDirection.rtl : TextDirection.ltr,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

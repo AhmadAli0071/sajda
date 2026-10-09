@@ -13,7 +13,6 @@ import '../data/static_data.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
-import '../services/date_service.dart';
 import '../services/firebase_auth_service.dart';
 import '../services/hijri_date_service.dart';
 import '../services/prayer_notification_service.dart';
@@ -43,6 +42,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static const _kPrayerMethod = 'sajda_prayer_method';
   static const _kAsrSchool = 'sajda_asr_school';
   static const _kContentLang = 'sajda_content_lang';
+  static const _kHijriAdjust = 'sajda_hijri_adjust';
 
   String _language = 'en'; // 'en' | 'ur' | 'ar' | 'bn' | 'id' | 'tr' | 'fa' | 'hi' | 'ms' | 'fr'
   /// Content translation language for Ayat of the Day & Adhkar
@@ -81,6 +81,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool _tasbeehVibration = true;
   int _prayerMethod = 2; // ISNA
   int _asrSchool = 0; // Shafi/Standard
+  int _hijriAdjust = 0; // Hijri date offset in days (-2..+2)
 
   String? _authToken;
   String? _userId;
@@ -140,6 +141,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool get tasbeehVibration => _tasbeehVibration;
   int get prayerMethod => _prayerMethod;
   int get asrSchool => _asrSchool;
+  int get hijriAdjust => _hijriAdjust;
 
   String get locationSource => _location?.source ?? 'MANUAL';
   bool get isManualLocation => _location?.isManual ?? true;
@@ -167,30 +169,19 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     return 'Asia/Karachi';
   }
 
-  /// Get current Hijri date using local Umm al-Qura calculation.
-  /// Islamic day advances at Maghrib in the selected location. When today's
-  /// prayer times are cached we pass the REAL Maghrib; otherwise the service
-  /// falls back to its documented 18:30 approximation.
-  HijriDateInfo get todayHijriDate {
-    DateTime? maghrib;
-    try {
-      final cached = ApiClient.instance.cachedPrayerTimes;
-      final maghribTime = cached?.prayers
-          .where((p) => p.name == 'Maghrib')
-          .firstOrNull;
-      final hm = maghribTime == null ? null : dateService.parseHm(maghribTime.time);
-      if (hm != null) {
-        final (h, m) = hm;
-        final now = DateTime.now();
-        maghrib = dateService.zonedDateTimeToInstant(
-          locationTimezone, now.year, now.month, now.day, h, m,
-        );
-      }
-    } catch (_) {}
-    return HijriDateService.getTodayHijri(
-      locationTimezone: locationTimezone,
-      maghribTime: maghrib,
-    );
+  /// Current Hijri date (Umm al-Qura + user adjustment). One Hijri date per
+  /// Gregorian day, matching printed calendars.
+  HijriDateInfo get todayHijriDate => HijriDateService.getTodayHijri();
+
+  /// Set the Hijri date offset (-2..+2 days) and persist it. The whole app
+  /// picks this up on the next conversion because the service reads the
+  /// static [HijriDateService.adjustDays].
+  Future<void> setHijriAdjust(int days) async {
+    _hijriAdjust = days.clamp(-2, 2);
+    HijriDateService.adjustDays = _hijriAdjust;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kHijriAdjust, _hijriAdjust);
   }
 
   void setDeviceLocale(Locale locale) {
@@ -252,6 +243,10 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _tasbeehVibration = prefs.getBool(_kTasbeehVibration) ?? true;
     _prayerMethod = prefs.getInt(_kPrayerMethod) ?? 2;
     _asrSchool = prefs.getInt(_kAsrSchool) ?? 0;
+    // Push the persisted Hijri offset into the service BEFORE any UI or API
+    // call converts a date (home header, calendar grid, prayer payloads).
+    _hijriAdjust = (prefs.getInt(_kHijriAdjust) ?? 0).clamp(-2, 2);
+    HijriDateService.adjustDays = _hijriAdjust;
 
     final cityName = prefs.getString(_kCity);
     if (cityName != null) {

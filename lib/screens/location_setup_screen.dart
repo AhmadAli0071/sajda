@@ -88,11 +88,11 @@ class _LocationSetupScreenState extends State<LocationSetupScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
     return Scaffold(
       appBar: AppBar(title: Text(state.t('Choose Your Location', 'اپنا مقام منتخب کریں'))),
+      // The global safe area already lifts content above the system navbar.
       body: ListView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomPadding),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         children: [
           Text(state.t(
               'Prayer times need your location. Choose one option.',
@@ -170,13 +170,13 @@ class _LocationSetupScreenState extends State<LocationSetupScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (ctx) {
-        final bottomPadding = MediaQuery.of(ctx).viewPadding.bottom;
         return StatefulBuilder(
           builder: (ctx, setS) {
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + bottomPadding,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
                 left: 16,
                 right: 16,
                 top: 16,

@@ -15,7 +15,9 @@ class AdhkarScreen extends StatelessWidget {
     final state = context.watch<AppState>();
     final adhkar = context.watch<AdhkarService>();
     final categories = adhkar.categories;
-    final contentLang = state.contentLang;
+    // Adhkar only offers Arabic + English — snap the shared content language
+    // so the menu never shows an unselectable value (e.g. global 'hi').
+    final contentLang = adhkarLangFor(state.contentLang);
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
@@ -23,6 +25,7 @@ class AdhkarScreen extends StatelessWidget {
         actions: [
           ContentLanguageMenu(
             selected: contentLang,
+            languages: kAdhkarLanguages,
             onChanged: (code) => context.read<AppState>().setContentLanguage(code),
           ),
           const SizedBox(width: 4),

@@ -4,13 +4,16 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../services/streak_v2_api.dart';
+import 'notification_router.dart';
 
 class PrayerCheckinService {
   static final PrayerCheckinService instance = PrayerCheckinService._();
   PrayerCheckinService._();
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  // Shared singleton plugin — tap routing (including the Yes/No action
+  // buttons) lives in NotificationRouter.
+  FlutterLocalNotificationsPlugin get _plugin =>
+      NotificationRouter.instance.plugin;
   bool _initialized = false;
 
   static const String _channelId = 'prayer_checkin';
@@ -19,13 +22,7 @@ class PrayerCheckinService {
 
   Future<void> init() async {
     if (_initialized) return;
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings();
-    await _plugin.initialize(
-      settings: const InitializationSettings(android: androidInit, iOS: iosInit),
-      onDidReceiveNotificationResponse: _onResponse,
-      onDidReceiveBackgroundNotificationResponse: _onBackgroundResponse,
-    );
+    await NotificationRouter.instance.ensureInitialized();
 
     if (_plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>() != null) {
       _plugin
@@ -94,36 +91,13 @@ class PrayerCheckinService {
         category: AndroidNotificationCategory.reminder,
         autoCancel: true,
         actions: const [
-          AndroidNotificationAction('yes', 'Haan'),
-          AndroidNotificationAction('no', 'Nahi'),
+          AndroidNotificationAction('yes', 'Yes'),
+          AndroidNotificationAction('no', 'No'),
         ],
       ),
       iOS: const DarwinNotificationDetails(
         categoryIdentifier: 'PRAYER_CHECKIN',
       ),
     );
-  }
-
-  static Future<void> _onResponse(NotificationResponse response) async {
-    final payload = response.payload;
-    if (payload == null || payload.isEmpty) return;
-    try {
-      final data = jsonDecode(payload) as Map<String, dynamic>;
-      final prayer = data['prayer'] as String?;
-      final timezone = data['timezone'] as String?;
-      if (prayer == null || timezone == null) return;
-
-      if (response.actionId == 'yes') {
-        // ONE canonical tick: updates the solo streak and every group the
-        // user belongs to (server fan-out). Timezone/dateKey are resolved
-        // server-side from the user's profile.
-        await StreakV2Api.instance.completePrayer(prayer);
-      }
-    } catch (_) {}
-  }
-
-  @pragma('vm:entry-point')
-  static Future<void> _onBackgroundResponse(NotificationResponse response) async {
-    await _onResponse(response);
   }
 }

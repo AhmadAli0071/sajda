@@ -77,27 +77,21 @@ class SettingsScreen extends StatelessWidget {
     final currentLang = state.language;
     showModalBottomSheet(
       context: context,
+      // Stay above the system navigation bar on edge-to-edge devices.
+      useSafeArea: true,
       builder: (ctx) {
-        final bottomPadding = MediaQuery.of(ctx).viewPadding.bottom;
-        return Container(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomPadding),
+        // The theme already renders a drag handle; no custom one here or it
+        // would show as a second line above the title.
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
               Text(
                 state.t('Select Language', 'زبان منتخب کریں'),
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               ...AppStrings.supportedLanguages.map((l) {
                 final isSelected = l.code == currentLang;
                 return ListTile(
@@ -188,22 +182,7 @@ class SettingsScreen extends StatelessWidget {
                 }),
                 const SizedBox(height: 6),
                 const Divider(height: 1, indent: 16, endIndent: 16),
-                FutureBuilder<bool>(
-                  future: PrayerNotificationService.instance.exactAlarmsAllowed(),
-                  builder: (ctx, snap) {
-                    final allowed = snap.data ?? true;
-                    return _NavigationTile(
-                      icon: Icons.schedule_rounded,
-                      title: state.t('Exact Azan Timing', 'درست اذان ٹائمنگ'),
-                      subtitle: allowed
-                          ? state.t('On — azan rings at the exact time',
-                              'فعال — اذان ٹھیک وقت پر ہوتی ہے')
-                          : state.t('Off — azan may be a few minutes late. Tap to enable',
-                              'بند — اذان میں تاخیر ہو سکتی ہے۔ فعال کرنے کے لیے ٹیپ کریں'),
-                      onTap: () => PrayerNotificationService.instance.ensureExactAlarms(),
-                    );
-                  },
-                ),
+                const _ExactAzanTile(),
                 const SizedBox(height: 6),
               ],
             ]),
@@ -254,6 +233,47 @@ class SettingsScreen extends StatelessWidget {
                       selected: state.themeMode == ThemeMode.system,
                       onTap: () => state.setThemeMode(ThemeMode.system),
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+          _SectionHeader(icon: Icons.calendar_month_rounded, title: state.t('Islamic Calendar', 'اسلامی کیلنڈر')),
+          const SizedBox(height: 10),
+          _SettingsCard(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    state.t('Hijri date adjustment', 'ہجری تاریخ ایڈجسٹمنٹ'),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: theme.colorScheme.onSurface),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    state.t('Match your local moon sighting (mosque calendar).', 'اپنے مقامی چاند (مسجد کے کیلنڈر) کے مطابق کریں۔'),
+                    style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    state.isUrdu ? state.todayHijriDate.fullAr : state.todayHijriDate.full,
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.primary),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [-2, -1, 0, 1, 2].map((v) {
+                      final label = v > 0 ? '+$v' : '$v';
+                      return Expanded(
+                        child: _AdjustChip(
+                          label: label,
+                          selected: state.hijriAdjust == v,
+                          onTap: () => state.setHijriAdjust(v),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
@@ -487,6 +507,50 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
+class _AdjustChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _AdjustChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppColors.accent(isDark);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? accent.withValues(alpha: 0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? accent
+                  : (isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              color: selected ? accent : cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ThemeOption extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -543,8 +607,100 @@ class _ThemeOption extends StatelessWidget {
   }
 }
 
-class _NavigationTile extends StatelessWidget {
-  final IconData icon;
+/// Exact azan timing — a real user-facing ON/OFF switch. On = native exact
+/// alarms (needs the Android "Alarms & reminders" grant on Android 12+),
+/// off = inexact daily notifications. Toggling persists the preference and
+/// reschedules every azan immediately.
+class _ExactAzanTile extends StatefulWidget {
+  const _ExactAzanTile();
+
+  @override
+  State<_ExactAzanTile> createState() => _ExactAzanTileState();
+}
+
+class _ExactAzanTileState extends State<_ExactAzanTile> {
+  bool _loaded = false;
+  bool _pref = true;
+  bool _allowed = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final svc = PrayerNotificationService.instance;
+    final pref = await svc.exactAzanEnabled();
+    final allowed = await svc.exactAlarmsAllowed();
+    if (!mounted) return;
+    setState(() {
+      _pref = pref;
+      _allowed = allowed;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _toggle(bool value) async {
+    if (_busy) return;
+    final state = context.read<AppState>();
+    _busy = true;
+    try {
+      if (value) {
+        // Opens the system "Alarms & reminders" screen on Android 12+ when
+        // the grant is missing; no-op when already allowed.
+        await PrayerNotificationService.instance.ensureExactAlarms();
+      }
+      await PrayerNotificationService.instance.setExactAzanEnabled(value);
+      try {
+        final times = await ApiClient.instance.getPrayerTimesFor(state, useCache: false);
+        await PrayerNotificationService.instance.scheduleAll(
+          times.prayers,
+          isUrdu: state.isUrdu,
+          prayerModes: state.prayerNotificationModes,
+          city: state.displayCityName,
+        );
+      } catch (_) {}
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        value
+            ? state.t('Exact azan timing enabled', 'درست اذان ٹائمنگ فعال ہو گئی')
+            : state.t('Exact azan timing off — azan may be a few minutes late',
+                'درست اذان ٹائمنگ بند — اذان میں تاخیر ہو سکتی ہے'),
+      );
+    } finally {
+      _busy = false;
+    }
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final subtitle = !_loaded
+        ? ''
+        : !_pref
+            ? state.t('Off — azan may be a few minutes late',
+                'بند — اذان میں تاخیر ہو سکتی ہے')
+            : _allowed
+                ? state.t('On — azan rings at the exact time',
+                    'فعال — اذان ٹھیک وقت پر ہوتی ہے')
+                : state.t(
+                    'Needs "Alarms & reminders" permission — tap the switch',
+                    '"الارامز اینڈ ریمائنڈرز" کی اجازت درکار ہے — سوئچ دبائیں');
+    return _SwitchTile(
+      icon: Icons.schedule_rounded,
+      title: state.t('Exact Azan Timing', 'درست اذان ٹائمنگ'),
+      subtitle: subtitle,
+      value: _loaded ? _pref : true,
+      onChanged: _toggle,
+    );
+  }
+}
+
+class _NavigationTile extends StatelessWidget {  final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;

@@ -5,14 +5,16 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../services/quran_service.dart';
+import 'notification_router.dart';
 
 class AyahNotificationService {
   static final AyahNotificationService instance =
       AyahNotificationService._();
   AyahNotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
+  // Shared singleton plugin — tap routing lives in NotificationRouter.
+  FlutterLocalNotificationsPlugin get _plugin =>
+      NotificationRouter.instance.plugin;
   static const int _baseId = 9400;
   bool _initialized = false;
 
@@ -26,11 +28,7 @@ class AyahNotificationService {
     } catch (_) {
       tz.setLocalLocation(tz.getLocation('Asia/Karachi'));
     }
-    await _plugin.initialize(
-      settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      ),
-    );
+    await NotificationRouter.instance.ensureInitialized();
     await _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()

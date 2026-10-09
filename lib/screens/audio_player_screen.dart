@@ -24,6 +24,7 @@ class AudioPlayerScreen extends StatefulWidget {
 
 class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   String? _lastError;
+  bool _closeRequested = false;
 
   @override
   void initState() {
@@ -41,11 +42,17 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   void _onAudioChanged() {
     final audio = context.read<AudioPlayerState>();
     // Playback fully stopped (X on the mini bar / Stop button / fatal error):
-    // there is nothing to show on this screen anymore — close it.
+    // there is nothing to show on this screen anymore — close it. Several
+    // notifies can fire within one stop(); close only once, or the second
+    // pop would remove the screen underneath this one.
     if (!audio.hasAudio) {
-      if (mounted) Navigator.of(context).maybePop();
+      if (mounted && !_closeRequested) {
+        _closeRequested = true;
+        Navigator.of(context).maybePop();
+      }
       return;
     }
+    _closeRequested = false;
     final err = audio.error;
     if (err != null && err != _lastError && mounted) {
       _lastError = err;

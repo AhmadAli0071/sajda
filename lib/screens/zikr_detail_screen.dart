@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/azkar_model.dart';
 import '../services/adhkar_service.dart';
-import '../services/azkar_audio_provider.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/language_switcher.dart';
@@ -18,10 +16,11 @@ class ZikrDetailScreen extends StatefulWidget {
 }
 
 class _ZikrDetailScreenState extends State<ZikrDetailScreen> {
-  final AudioPlayer _player = AudioPlayer();
+  // Keyed by the item's POSITION in the list — the bundled dataset reuses
+  // the same numeric id across categories (id 1 appears 130+ times), so
+  // id-keyed counters all moved together when one was tapped.
   final Map<int, int> _counts = {};
-  bool _playing = false;
-  bool _loadingAudio = false;
+  bool _showEnglishTranslation = true;
 
   ZikrCategory get _category {
     // Prefer the merged (translated) category from the service; the widget
@@ -31,61 +30,10 @@ class _ZikrDetailScreenState extends State<ZikrDetailScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    _player.playerStateStream.listen((state) {
-      if (mounted && state.playing != _playing) {
-        setState(() => _playing = state.playing);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-
-  Future<void> _toggleAudio(AzkarAudioProvider audioProvider) async {
-    if (_playing) {
-      await _player.stop();
-      return;
-    }
-
-    final audioState = audioProvider.state;
-    if (audioState.availability != AzkarAudioAvailability.available) {
-      if (!mounted) return;
-      showAppSnack(
-        context,
-        audioState.message ?? 'Audio temporarily unavailable',
-        error: true,
-      );
-      return;
-    }
-
-    final url = audioState.licensedUrl;
-    if (url == null || url.isEmpty) {
-      if (!mounted) return;
-      showAppSnack(context, 'Audio temporarily unavailable', error: true);
-      return;
-    }
-
-    setState(() => _loadingAudio = true);
-    try {
-      await _player.setUrl(url);
-      await _player.play();
-    } catch (_) {
-      if (!mounted) return;
-      showAppSnack(context, 'Could not play audio', error: true);
-    }
-    if (mounted) setState(() => _loadingAudio = false);
-  }
-
-  @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final audioProvider = context.watch<AzkarAudioProvider>();
-    final contentLang = state.contentLang;
+    // Adhkar only offers Arabic + English — snap the shared content language.
+    final contentLang = adhkarLangFor(state.contentLang);
     final category = _category;
 
     return Scaffold(
@@ -93,24 +41,15 @@ class _ZikrDetailScreenState extends State<ZikrDetailScreen> {
         title: Text(category.nameFor(contentLang),
             style: TextStyle(fontFamily: contentLang == 'ar' ? 'serif' : null)),
         actions: [
-          ContentLanguageMenu(
-            selected: contentLang,
-            onChanged: (code) => context.read<AppState>().setContentLanguage(code),
-          ),
+          // English-only translation toggle — other languages are not
+          // offered here by design.
           IconButton(
-            onPressed: audioProvider.isAvailable
-                ? () => _toggleAudio(audioProvider)
-                : null,
-            icon: _loadingAudio
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : Icon(_playing ? Icons.stop_circle_outlined : Icons.play_circle_outline_rounded),
-            tooltip: audioProvider.isAvailable
-                ? state.t('Play audio', 'آڈیو سنیں')
-                : state.t('Audio temporarily unavailable', 'آڈیو عارضی طور پر دستیاب نہیں'),
+            onPressed: () => setState(
+                () => _showEnglishTranslation = !_showEnglishTranslation),
+            icon: Icon(_showEnglishTranslation
+                ? Icons.translate_rounded
+                : Icons.translate_outlined),
+            tooltip: state.t('English translation', 'انگریزی ترجمہ'),
           ),
         ],
       ),
@@ -119,10 +58,10 @@ class _ZikrDetailScreenState extends State<ZikrDetailScreen> {
         itemCount: category.items.length,
         itemBuilder: (ctx, i) {
           final item = category.items[i];
-          final done = _counts[item.id] ?? 0;
+          final done = _counts[i] ?? 0;
           final complete = done >= item.count;
-          final translation = contentLang != 'ar' && item.hasTranslation(contentLang)
-              ? item.textFor(contentLang)
+          final translation = _showEnglishTranslation && item.hasTranslation('en')
+              ? item.textFor('en')
               : null;
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -148,7 +87,7 @@ class _ZikrDetailScreenState extends State<ZikrDetailScreen> {
                     const SizedBox(height: 10),
                     Text(
                       translation,
-                      textAlign: contentLang == 'ur' ? TextAlign.right : TextAlign.left,
+                      textAlign: TextAlign.left,
                       style: TextStyle(
                         fontSize: 14,
                         height: 1.7,
@@ -161,13 +100,13 @@ class _ZikrDetailScreenState extends State<ZikrDetailScreen> {
                     children: [
                       InkWell(
                         onTap: () => setState(() {
-                          _counts[item.id] = done >= item.count ? 0 : done + 1;
+                          _counts[i] = done >= item.count ? 0 : done + 1;
                         }),
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
-                            color: complete ? AppColors.primary : AppColors.primary,
+                            color: AppColors.primary,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(

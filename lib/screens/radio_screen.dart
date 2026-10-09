@@ -20,6 +20,7 @@ class _RadioScreenState extends State<RadioScreen> {
   Object? _failure;
   bool _fetching = true;
   String _query = '';
+  String _category = RadioCategory.all;
 
   @override
   void initState() {
@@ -79,10 +80,34 @@ class _RadioScreenState extends State<RadioScreen> {
     final stations = _stations;
     if (stations == null) return const [];
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return stations;
-    return stations
-        .where((s) => s.name.toLowerCase().contains(q))
-        .toList(growable: false);
+    return stations.where((s) {
+      if (_category != RadioCategory.all && s.category != _category) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      return s.displayName.toLowerCase().contains(q) ||
+          s.name.toLowerCase().contains(q) ||
+          (s.reciter?.toLowerCase().contains(q) ?? false);
+    }).toList(growable: false);
+  }
+
+  String _categoryLabel(AppState state, String code) {
+    switch (code) {
+      case RadioCategory.recitation:
+        return state.t('Recitation', 'تلاوت');
+      case RadioCategory.translation:
+        return state.t('Translation', 'ترجمہ');
+      case RadioCategory.tafsir:
+        return state.t('Tafsir', 'تفسیر');
+      case RadioCategory.adhkar:
+        return state.t('Adhkar', 'اذکار');
+      case RadioCategory.hadith:
+        return state.t('Hadith', 'حدیث');
+      case RadioCategory.occasion:
+        return state.t('Occasions', 'مناسبات');
+      default:
+        return state.t('All', 'سب');
+    }
   }
 
   @override
@@ -121,6 +146,26 @@ class _RadioScreenState extends State<RadioScreen> {
               ),
             ),
           ),
+          // Category filter chips (All + Recitation/Translation/Tafsir/…).
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                for (final code in [RadioCategory.all, ...RadioCategory.values])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(_categoryLabel(state, code)),
+                      selected: _category == code,
+                      onSelected: (_) => setState(() => _category = code),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           Expanded(
             child: _fetching
                 ? const AppLoader()
@@ -187,18 +232,44 @@ class _RadioScreenState extends State<RadioScreen> {
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
-                                        child: Text(
-                                          station.name,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: active
-                                                    ? FontWeight.w800
-                                                    : null,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              station.displayName,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: active
+                                                        ? FontWeight.w800
+                                                        : null,
+                                                  ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            // Translation stations name the
+                                            // reciter under the friendly label.
+                                            if (station.reciter != null) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                station.reciter!,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: isDark
+                                                          ? AppColors.darkMuted
+                                                          : AppColors
+                                                              .lightSecondaryText,
+                                                    ),
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
                                               ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
+                                            ],
+                                          ],
                                         ),
                                       ),
                                       const SizedBox(width: 8),

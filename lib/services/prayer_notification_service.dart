@@ -9,6 +9,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../config.dart';
 import '../models/models.dart';
+import 'notification_router.dart';
 import 'prayer_native_alarm.dart';
 
 class PrayerNotificationService {
@@ -22,9 +23,11 @@ class PrayerNotificationService {
   static const _notificationIdBase = 9000;
   static const _reminderIdBase = 8000;
   static const _channelsV2Key = 'sajda_azan_channels_v2';
+  static const _kExactAzan = 'sajda_exact_azan';
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
+  // Shared singleton plugin — tap routing lives in NotificationRouter.
+  FlutterLocalNotificationsPlugin get _plugin =>
+      NotificationRouter.instance.plugin;
   bool _initialized = false;
 
   Future<void> init({String? userTimezone}) async {
@@ -49,16 +52,7 @@ class PrayerNotificationService {
       }
     }
 
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    await _plugin.initialize(
-      settings:
-          const InitializationSettings(android: androidInit, iOS: iosInit),
-    );
+    await NotificationRouter.instance.ensureInitialized();
 
     await _migrateAndCreateChannels();
     _initialized = true;
@@ -154,6 +148,19 @@ class PrayerNotificationService {
     } catch (_) {}
   }
 
+  /// User preference: exact azan timing on/off (default on). When off, azans
+  /// are scheduled via the plugin's inexact daily repeats instead of native
+  /// exact alarms.
+  Future<bool> exactAzanEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kExactAzan) ?? true;
+  }
+
+  Future<void> setExactAzanEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kExactAzan, enabled);
+  }
+
   /// Schedules the next occurrence of every prayer azan (+ 10-minute
   /// reminder) via native exact alarms with a +24h self-rescheduling chain,
   /// so azan keeps firing even if the app isn't opened for days.
@@ -170,6 +177,9 @@ class PrayerNotificationService {
     await init();
     await cancelAll();
 
+    final prefs = await SharedPreferences.getInstance();
+    final exact = prefs.getBool(_kExactAzan) ?? true;
+
     final now = DateTime.now();
     var id = _notificationIdBase;
     var failures = 0;
@@ -185,6 +195,7 @@ class PrayerNotificationService {
       // timezone. Convert to an absolute epoch instant so the alarm is
       // correct even when the device timezone differs (travel etc.).
       int azanMillis;
+      tz.TZDateTime azanWhen;
       try {
         final loc = tz.getLocation(timezone);
         var inLoc =
@@ -193,12 +204,14 @@ class PrayerNotificationService {
           inLoc = inLoc.add(const Duration(days: 1));
         }
         azanMillis = inLoc.millisecondsSinceEpoch;
+        azanWhen = inLoc;
       } catch (_) {
         var when = DateTime(now.year, now.month, now.day, hour, minute);
         if (!when.isAfter(now)) {
           when = when.add(const Duration(days: 1));
         }
         azanMillis = when.millisecondsSinceEpoch;
+        azanWhen = tz.TZDateTime.from(when, tz.local);
       }
 
       final pMode = prayerModes?[p.name] ?? 'full';
@@ -211,44 +224,99 @@ class PrayerNotificationService {
           isUrdu ? (AppStrings.prayerNames[p.name] ?? p.name) : p.name;
 
       if (pMode == 'full' || pMode == 'silent') {
-        final ok = await PrayerNativeAlarm.scheduleAlarm(
-          prayerName: prayerName,
-          triggerAtMillis: azanMillis,
-          hour: hour,
-          minute: minute,
-          isUrdu: isUrdu,
-          isReminder: false,
-          mode: pMode,
-          notificationId: id,
-          city: city,
-        );
+        final ok = exact
+            ? await PrayerNativeAlarm.scheduleAlarm(
+                prayerName: prayerName,
+                triggerAtMillis: azanMillis,
+                hour: hour,
+                minute: minute,
+                isUrdu: isUrdu,
+                isReminder: false,
+                mode: pMode,
+                notificationId: id,
+                city: city,
+              )
+            : await _scheduleInexact(
+                id: id,
+                title: isUrdu ? 'وقتِ نماز: $prayerName' : 'Prayer time: $prayerName',
+                body: isUrdu ? 'اللہ اکبر، اللہ اکبر' : 'Allahu Akbar, Allahu Akbar',
+                when: azanWhen,
+                mode: pMode,
+              );
         if (!ok) failures++;
       }
 
       // Reminder 10 minutes before; if that moment already passed, take
       // tomorrow's reminder instead of firing late.
-      var reminderMillis = azanMillis - const Duration(minutes: 10).inMilliseconds;
-      if (reminderMillis <= now.millisecondsSinceEpoch) {
-        reminderMillis +=
-            const Duration(days: 1).inMilliseconds;
+      var reminderWhen = azanWhen.subtract(const Duration(minutes: 10));
+      if (!reminderWhen.isAfter(tz.TZDateTime.now(azanWhen.location))) {
+        reminderWhen = reminderWhen.add(const Duration(days: 1));
       }
-      final reminderOk = await PrayerNativeAlarm.scheduleAlarm(
-        prayerName: prayerName,
-        triggerAtMillis: reminderMillis,
-        hour: hour,
-        minute: minute,
-        isUrdu: isUrdu,
-        isReminder: true,
-        mode: pMode,
-        notificationId: _reminderIdBase + (id - _notificationIdBase),
-        city: city,
-      );
+      final reminderMillis = reminderWhen.millisecondsSinceEpoch;
+      final reminderOk = exact
+          ? await PrayerNativeAlarm.scheduleAlarm(
+              prayerName: prayerName,
+              triggerAtMillis: reminderMillis,
+              hour: hour,
+              minute: minute,
+              isUrdu: isUrdu,
+              isReminder: true,
+              mode: pMode,
+              notificationId: _reminderIdBase + (id - _notificationIdBase),
+              city: city,
+            )
+          : await _scheduleInexact(
+              id: _reminderIdBase + (id - _notificationIdBase),
+              title: isUrdu
+                  ? 'یاد دہانی: $prayerName'
+                  : 'Reminder: $prayerName',
+              body: isUrdu ? '10 منٹ باقی ہیں' : '10 minutes left',
+              when: reminderWhen,
+              mode: pMode,
+            );
       if (!reminderOk) failures++;
 
       id++;
     }
     if (failures > 0) {
       debugPrint('PrayerNotificationService: $failures alarm(s) failed to schedule');
+    }
+  }
+
+  /// Inexact fallback used when the user turns exact azan timing off: daily
+  /// repeating notifications via the plugin instead of native exact alarms.
+  Future<bool> _scheduleInexact({
+    required int id,
+    required String title,
+    required String body,
+    required tz.TZDateTime when,
+    required String mode,
+  }) async {
+    try {
+      final silent = mode == 'silent';
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: when,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            silent ? _silentChannelId : _channelId,
+            silent ? 'Silent Prayer Alerts' : 'Prayer Azan Alerts',
+            channelDescription: silent
+                ? 'Silent prayer time notifications'
+                : 'Full azan sound at every prayer time',
+            importance: silent ? Importance.high : Importance.max,
+            priority: Priority.max,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+        payload: 'prayer_azan',
+      );
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

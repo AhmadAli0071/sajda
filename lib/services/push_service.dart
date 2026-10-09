@@ -2,13 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../screens/group_dashboard_screen.dart';
-import '../screens/group_settings_screen.dart';
 import '../services/streak_v2_api.dart';
 import 'firebase_auth_service.dart';
+import 'notification_router.dart';
 
 /// FCM push for group streak activity (prayer ticks, day-complete, join
 /// requests). The streak system NEVER depends on push: every failure here
@@ -18,10 +17,9 @@ class PushService {
   static final PushService instance = PushService._();
   PushService._();
 
-  /// Root navigator for notification-tap routing (wired in main.dart).
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  // Shared singleton plugin — tap routing lives in NotificationRouter.
+  FlutterLocalNotificationsPlugin get _plugin =>
+      NotificationRouter.instance.plugin;
   static const _channel = AndroidNotificationChannel(
     'streak_activity',
     'Streak Activity',
@@ -54,13 +52,9 @@ class PushService {
   Future<void> _init() async {
     if (_initialized) return;
     await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
-    // Android heads-up: foreground FCM messages must be shown locally.
-    await _plugin.initialize(
-      settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      ),
-      onDidReceiveNotificationResponse: _onLocalTap,
-    );
+    // ONE initialize() for the plugin singleton — taps are routed by
+    // NotificationRouter (a second initialize here would steal its callback).
+    await NotificationRouter.instance.ensureInitialized();
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
@@ -109,47 +103,8 @@ class PushService {
 
   // ── Tap routing ──
 
-  void _onLocalTap(NotificationResponse response) {
-    final raw = response.payload;
-    if (raw == null || raw.isEmpty) return;
-    try {
-      _routePush(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {}
-  }
-
+  /// FCM taps delegate to the shared router (join_*, streak ticks, etc.).
   void _handleTapMessage(RemoteMessage message) {
-    _routePush(message.data);
-  }
-
-  /// join_request / member_joined → owners and admins land directly on the
-  /// approve/decline tab of group settings; everyone else (and join_decided
-  /// approvals) lands on the group dashboard.
-  Future<void> _routePush(Map<String, dynamic> data) async {
-    final type = data['type']?.toString();
-    if (type != 'join_request' && type != 'member_joined' && type != 'join_decided') {
-      return;
-    }
-    if (type == 'join_decided' && data['approved']?.toString() != 'true') {
-      return; // nothing to open for a declined request
-    }
-    final groupId = data['groupId']?.toString();
-    if (groupId == null || groupId.isEmpty) return;
-    final nav = navigatorKey.currentState;
-    if (nav == null) return;
-    Widget screen = GroupDashboardScreen(groupId: groupId);
-    if (type == 'join_request' || type == 'member_joined') {
-      try {
-        final dash = await StreakV2Api.instance.getGroupDashboard(groupId);
-        final role = dash.group.myRole;
-        if (role == 'owner' || role == 'admin') {
-          screen = GroupSettingsScreen(group: dash.group, initialTab: 1);
-        }
-      } catch (_) {
-        // Dashboard alone is the safe fallback (it loads its own data).
-      }
-    }
-    try {
-      nav.push(MaterialPageRoute(builder: (_) => screen));
-    } catch (_) {}
+    NotificationRouter.handleRemoteMessageData(message.data);
   }
 }

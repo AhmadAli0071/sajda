@@ -10,6 +10,7 @@ import '../state/streak_state.dart';
 import '../services/api_client.dart';
 import '../services/ayah_notification_service.dart';
 import '../services/dua_notification_service.dart';
+import '../services/notification_router.dart';
 import '../services/prayer_checkin_service.dart';
 import '../services/prayer_notification_service.dart';
 import '../services/push_service.dart';
@@ -18,8 +19,8 @@ import '../theme/app_theme.dart';
 import '../widgets/mini_player_bar.dart';
 import 'adhkar_screen.dart';
 import 'calendar_screen.dart';
-import 'history_screen.dart';
 import 'home_screen.dart';
+import 'islamic_screen.dart';
 import 'mushaf_screen.dart';
 import 'names_screen.dart';
 import 'pillars_screen.dart';
@@ -54,7 +55,16 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Notification taps switch tabs through the router (e.g. streak
+    // notification → Streak tab, ayah notification → Home). If a tap
+    // arrived during cold start / onboarding the value was held on the
+    // notifier and is applied here on first build.
+    _index = NotificationRouter.tabIndex.value;
+    NotificationRouter.tabIndex.addListener(_onNotificationTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Replay a cold-start notification tap now that the shell and its
+      // navigator exist.
+      NotificationRouter.instance.flushPendingLaunch();
       _scheduleDailyNotifications(context);
       // Permission requests belong AFTER onboarding/location setup (this
       // shell is only reachable then), never at cold start.
@@ -131,8 +141,17 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     }
   }
 
+  /// Notification taps route here (e.g. streak notification → Streak tab).
+  void _onNotificationTab() {
+    final target = NotificationRouter.tabIndex.value;
+    if (!mounted || target == _index) return;
+    setState(() => _index = target);
+    if (target == 2) context.read<StreakState>().refreshIfDayChanged();
+  }
+
   @override
   void dispose() {
+    NotificationRouter.tabIndex.removeListener(_onNotificationTab);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -409,6 +428,13 @@ List<MoreItem> moreItems(BuildContext context) {
       screen: const AdhkarScreen(),
     ),
     MoreItem(
+      title: 'Islamic Library',
+      titleUr: 'دینی لائبریری',
+      icon: Icons.local_library_outlined,
+      color: const Color(0xFF148F77),
+      screen: const IslamicScreen(),
+    ),
+    MoreItem(
       title: '99 Names of Allah',
       titleUr: 'اللہ کے 99 نام',
       icon: Icons.star_outline_rounded,
@@ -428,13 +454,6 @@ List<MoreItem> moreItems(BuildContext context) {
       icon: Icons.explore_rounded,
       color: const Color(0xFFB8860B),
       screen: const QiblaScreen(),
-    ),
-    MoreItem(
-      title: 'Islamic History',
-      titleUr: 'اسلامی تاریخ',
-      icon: Icons.history_edu_outlined,
-      color: const Color(0xFF8E44AD),
-      screen: const HistoryScreen(),
     ),
   ];
 }

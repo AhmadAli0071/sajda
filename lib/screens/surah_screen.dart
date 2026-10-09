@@ -310,21 +310,21 @@ class _SurahScreenState extends State<SurahScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: SegmentedButton<int>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: 0,
-                  icon: Icon(Icons.abc_rounded, size: 16),
-                  label: Text('عربی'),
+                  icon: const Icon(Icons.abc_rounded, size: 16),
+                  label: Text(state.t('Arabic', 'عربی')),
                 ),
                 ButtonSegment(
                   value: 1,
-                  icon: Icon(Icons.translate_rounded, size: 16),
-                  label: Text('ترجمہ'),
+                  icon: const Icon(Icons.translate_rounded, size: 16),
+                  label: Text(state.t('Translation', 'ترجمہ')),
                 ),
                 ButtonSegment(
                   value: 2,
-                  icon: Icon(Icons.menu_book_rounded, size: 16),
-                  label: Text('تفسیر'),
+                  icon: const Icon(Icons.menu_book_rounded, size: 16),
+                  label: Text(state.t('Tafsir', 'تفسیر')),
                 ),
               ],
               selected: {_viewMode},

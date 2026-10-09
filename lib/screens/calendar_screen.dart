@@ -68,7 +68,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     for (int day = 1; day <= daysInMonth; day++) {
       final gregorian = calendar.hijriToGregorian(hijriYear, hijriMonth, day);
-      final gregorianStr = '${gregorian.year}-${gregorian.month.toString().padLeft(2, '0')}-${gregorian.day.toString().padLeft(2, '0')}';
+      // Inverse of the service adjustment: displayed Hijri day N sits on the
+      // Gregorian date shifted by minus the user offset, so the grid, the
+      // "today" highlight and the home header all stay consistent.
+      final shifted = gregorian
+          .subtract(Duration(days: HijriDateService.adjustDays));
+      final gregorianStr =
+          '${shifted.year}-${shifted.month.toString().padLeft(2, '0')}-${shifted.day.toString().padLeft(2, '0')}';
 
       HijriCalendar.language = 'en';
 

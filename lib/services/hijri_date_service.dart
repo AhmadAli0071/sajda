@@ -1,22 +1,22 @@
 import 'package:hijri/hijri_calendar.dart';
 
-import 'date_service.dart';
-
-/// Local Hijri date calculation service using Umm al-Qura algorithm.
+/// Local Hijri date calculation using the Umm al-Qura algorithm, with a
+/// user-adjustable day offset.
 ///
-/// Islamic-day rule (IMPORTANT):
-/// The Islamic day begins at Maghrib (sunset), NOT at Gregorian midnight.
-/// Therefore, for TODAY:
-///   * before Maghrib            -> Hijri date of the current Gregorian day
-///   * at/after today's Maghrib  -> Hijri date of the NEXT Gregorian day
-/// Arbitrary past/future dates (calendar rendering, events) convert plainly
-/// without any shift.
+/// WHY AN OFFSET EXISTS:
+/// The Umm al-Qura civil calendar is astronomical and frequently differs from
+/// local moon sighting (ruet) by 1-2 days. Every consumer-facing Islamic date
+/// (home header, Islamic calendar grid, prayer-time payloads) flows through
+/// [convertPlain], so setting [adjustDays] shifts the whole app consistently.
+/// Users match it against their local mosque calendar in Settings.
 ///
-/// [maghribTime] allows callers that already fetched real prayer times to pass
-/// the exact Maghrib for the selected location. When omitted, a documented
-/// conservative approximation of 18:30 local is used — this only affects the
-/// boundary moment, never the date math itself.
+/// CONVENTION: one Hijri date per Gregorian day (same as printed calendars).
+/// The Islamic day is NOT advanced at Maghrib — that made evening dates run
+/// a day ahead of the printed calendar users compare against.
 class HijriDateService {
+  /// User adjustment in days (-2..+2). Displayed Hijri date equals the Umm
+  /// al-Qura date of (gregorian + adjustDays). AppState persists this.
+  static int adjustDays = 0;
   static const arabicMonths = [
     'محرم', 'صفر', 'ربيع الأول', 'ربيع الثاني', 'جمادى الأولى', 'جمادى الآخرة',
     'رجب', 'شعبان', 'رمضان', 'شوال', 'ذو القعدة', 'ذو الحجة',
@@ -28,16 +28,13 @@ class HijriDateService {
     'Ramadan', 'Shawwal', 'Dhu al-Qi\'dah', 'Dhu al-Hijjah',
   ];
 
-  /// Default Maghrib approximation when no real prayer time is available.
-  static const _defaultMaghribHour = 18;
-  static const _defaultMaghribMinute = 30;
-
-  /// Plain Gregorian -> Hijri conversion with NO Maghrib shift.
-  /// Exposed publicly so tests can assert against the raw conversion.
+  /// Gregorian -> Hijri conversion with the user adjustment applied.
+  /// Every displayed Islamic date in the app goes through here.
   static HijriDateInfo convertPlain(DateTime gregorian) {
     HijriCalendar.language = 'en';
     final dateOnly =
-        DateTime(gregorian.year, gregorian.month, gregorian.day);
+        DateTime(gregorian.year, gregorian.month, gregorian.day)
+            .add(Duration(days: adjustDays));
     final calendar = HijriCalendar.fromDate(dateOnly);
     final weekday = calendar.wkDay ?? calendar.weekDay();
     return HijriDateInfo(
@@ -51,45 +48,13 @@ class HijriDateService {
     );
   }
 
-  /// Hijri date for [gregorian], applying the Maghrib day-boundary rule when
-  /// [gregorian] is today in [locationTimezone].
-  static HijriDateInfo getHijriDate(
-    DateTime gregorian, {
-    String? locationTimezone,
-    DateTime? maghribTime,
-  }) {
-    final tz = locationTimezone;
-    final isToday = dateService.isToday(gregorian, timezone: tz);
+  /// Hijri date for [gregorian] (adjustment applied). Kept as a named method
+  /// so call sites read clearly.
+  static HijriDateInfo getHijriDate(DateTime gregorian) =>
+      convertPlain(gregorian);
 
-    if (!isToday) {
-      return convertPlain(gregorian);
-    }
-
-    final now = DateTime.now();
-    final effectiveMaghrib = maghribTime ??
-        DateTime(gregorian.year, gregorian.month, gregorian.day,
-            _defaultMaghribHour, _defaultMaghribMinute);
-
-    if (!now.isBefore(effectiveMaghrib)) {
-      // After Maghrib -> Islamic day has advanced to tomorrow.
-      final nextDay = DateTime(gregorian.year, gregorian.month, gregorian.day)
-          .add(const Duration(days: 1));
-      return convertPlain(nextDay);
-    }
-    return convertPlain(gregorian);
-  }
-
-  /// Hijri date for today (Maghrib-aware).
-  static HijriDateInfo getTodayHijri({
-    String? locationTimezone,
-    DateTime? maghribTime,
-  }) {
-    return getHijriDate(
-      DateTime.now(),
-      locationTimezone: locationTimezone,
-      maghribTime: maghribTime,
-    );
-  }
+  /// Hijri date for today.
+  static HijriDateInfo getTodayHijri() => convertPlain(DateTime.now());
 
   static String _weekdayEn(int weekday) {
     // weekday: 1=Monday ... 7=Sunday (from HijriCalendar.weekDay())

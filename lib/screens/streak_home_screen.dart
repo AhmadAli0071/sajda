@@ -39,7 +39,7 @@ class _StreakHomeScreenState extends State<StreakHomeScreen> {
     final app = context.watch<AppState>();
     final streak = context.watch<StreakState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // Gate shows the email magic-link sign-in when there is no session OR
+    // Gate shows the one-tap Google sign-in when there is no session OR
     // the backend rejected our token (authFailed) — never a dead UI that
     // errors "Authentication required" on every tap.
     final signedIn = app.isAuthenticated && !streak.authFailed;
@@ -100,64 +100,6 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
       return state.t('Sign-in failed. Please try again.', '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
     }
     return state.t('Sign-in failed: $error', '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645: $error');
-  }
-
-  /// One-tap Google sign-in: Firebase session → backend token exchange →
-  /// AppState adoption. The gate disappears when isAuthenticated flips.
-  /// Email magic-link sign-in: fallback for devices where Google one-tap
-  /// fails (e.g. a build whose signing SHA-1 is not yet registered in
-  /// Firebase). The link arrives via App Links; main.dart completes the
-  /// sign-in and the gate disappears.
-  Future<void> _signInWithEmail() async {
-    final state = context.read<AppState>();
-    final ctrl = TextEditingController();
-    final email = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(state.t('Sign in with email',
-            '\u0627\u06cc \u0645\u06cc\u0644 \u0633\u06d2 \u062f\u0627\u062e\u0644 \u06c1\u0648\u06ba')),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          decoration: InputDecoration(
-            labelText: state.t('Email address',
-                '\u0627\u06cc \u0645\u06cc\u0644 \u0627\u06cc\u0688\u0631\u06cc\u0633'),
-            hintText: 'you@gmail.com',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(state.t('Cancel', '\u0645\u0633\u062a\u0631\u062f')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: Text(state.t('Send link', '\u0644\u0646\u06a9 \u0628\u06be\u06cc\u062c\u06cc\u06ba')),
-          ),
-        ],
-      ),
-    );
-    if (email == null || email.isEmpty || !email.contains('@')) {
-      ctrl.dispose();
-      return;
-    }
-    if (mounted) setState(() => _loading = true);
-    final error = await FirebaseAuthService.instance.sendMagicLink(email);
-    ctrl.dispose();
-    if (mounted) setState(() => _loading = false);
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(error == null
-            ? state.t(
-                'Link sent — open your email and tap it to sign in.',
-                '\u0644\u0646\u06a9 \u0628\u06be\u06cc\u062c \u062f\u06cc\u0627 \u06af\u06cc\u0627 \u2014 \u0627\u067e\u0646\u0627 \u0627\u06cc \u0645\u06cc\u0644 \u06a9\u06be\u0648\u0644\u06cc\u06ba \u0627\u0648\u0631 \u062f\u0627\u062e\u0644\u06d2 \u06a9\u06d2 \u0644\u06cc\u06d2 \u0644\u0646\u06a9 \u062f\u0628\u0627\u0626\u06cc\u06ba\u06d4')
-            : state.t('Could not send link: $error',
-                '\u0644\u0646\u06a9 \u0646\u06c1\u06cc\u06ba \u0628\u06be\u06cc\u062c \u0633\u06a9\u06d2: $error')),
-      ),
-    );
   }
 
   Future<void> _signInWithGoogle() async {
@@ -251,22 +193,6 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
                   state.t('Continue with Google', 'گوگل سے جاری رکھیں'),
                   style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
                 ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              state.t('or', 'یا'),
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
-              ),
-            ),
-            TextButton.icon(
-              onPressed: _loading ? null : _signInWithEmail,
-              icon: const Icon(Icons.mail_outline_rounded, size: 20),
-              label: Text(
-                state.t('Sign in with email link', 'ای میل لنک سے داخل ہوں'),
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
               ),
             ),
           ],
