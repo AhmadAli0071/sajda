@@ -69,3 +69,6 @@ backend/.std_uri.mjs
 
 # Railway API token — NEVER commit
 /.railway_token
+
+# VPS credentials - NEVER commit
+/vps.md
