@@ -1,7 +1,46 @@
 # Deployment Guide — Sajda App
 
-> Ye guide aaj ke (Sep 20, 2026) kaamyaab deployment se banayi gayi hai.
-> Har cheez jo neeche hai wo **asli mein test aur chal** chuki hai.
+> Ye guide Sep 20, 2026 ke Railway deployment se shuru hui thi.
+> **Oct 9, 2026 se backend self-hosted OVH VPS pe hai** (neeche Section 0).
+
+---
+
+## 0. CURRENT: Backend on VPS (Oct 9, 2026 se)
+
+| Cheez | Detail |
+|---|---|
+| **Backend** (`/backend`, Node.js) | **OVH VPS** (57.129.161.5) — PM2 + Nginx + Let's Encrypt |
+| **Live URL** | `https://sajdaapi.57.129.161.5.nip.io/api` |
+| **Health check** | `GET /api/health` → `200` |
+| **Folder** | `/home/ubuntu/S-Backup/sajda` |
+| **Port** | `5001` (internal), nginx se proxy |
+| **PM2 name** | `sajda-api` |
+| **DB** | MongoDB Atlas (cloud — local MongoDB nahi) |
+| **VPS details** | repo root `vps.md` (gitignored — **GitHub pe kabhi push mat karna**) |
+
+### VPS pe redeploy (backend change ke baad)
+
+```bash
+ssh ubuntu@57.129.161.5
+cd /home/ubuntu/S-Backup/sajda
+git pull
+cd backend && npm install --omit=dev
+pm2 restart sajda-api
+curl -s https://sajdaapi.57.129.161.5.nip.io/api/health
+```
+
+### VPS troubleshooting
+
+```bash
+pm2 list                    # sajda-api online hona chahiye
+pm2 logs sajda-api          # crash logs
+pm2 restart sajda-api       # restart
+sudo nginx -t && sudo systemctl reload nginx   # nginx config check
+sudo certbot certificates   # SSL expiry check (auto-renew on)
+```
+
+> **SSH non-interactive** (automated scripts ke liye): Windows pe password
+> prompt hang hota hai. `SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force` use karo.
 
 ---
 
@@ -9,12 +48,17 @@
 
 | Cheez | Kahan jati hai | Kaise |
 |---|---|---|
-| **Backend** (`/backend` folder, Node.js) | **Railway** (project: `sajda-prod`) | GitHub `main` par push → **auto-deploy** (3-6 min) |
+| **Backend** (`/backend` folder, Node.js) | **OVH VPS** (see Section 0) | SSH → `git pull` → `pm2 restart sajda-api` |
+| **Privacy policy site** | **Railway** (`policy-production-980a`) | GitHub push → auto-deploy |
 | **Flutter app** (Android) | **Play Console** | Local build → AAB upload → review |
 | Frontend web | Kuch nahi | App hi sab kuch hai |
 
-**Live backend URL:** `https://backend-production-04292.up.railway.app/api`
+**Live backend URL:** `https://sajdaapi.57.129.161.5.nip.io/api`
 **Health check:** `GET /api/health` → `200` hona chahiye
+
+**App endpoint source:** `lib/config.dart` (`AppConfig.apiBaseUrl`) —
+sab API calls (`api_client.dart`, `auth_service.dart`) isi se aati hain.
+Naya domain lage to sirf `config.dart` badlo.
 
 ---
 
@@ -67,7 +111,7 @@ node scripts/railway/logs.mjs <deploymentId>     # short id (8 letters) bhi chal
 
 ---
 
-## 4. Flow A — Normal deployment (90% cases)
+## 4. Flow A — Backend deployment (90% cases)
 
 Backend change kiya? Bas:
 
@@ -77,22 +121,22 @@ git commit -m "fix: ..."
 git push origin main
 ```
 
-1. GitHub integration **khud deploy shuru** kar deta hai (Railway dashboard → Deployments mein dikhega)
-2. 3-6 minute wait
-3. Verify:
-```powershell
-Invoke-WebRequest -Uri "https://backend-production-04292.up.railway.app/api/health" -UseBasicParsing
-node scripts/railway/status.mjs
-```
-4. Jo endpoint change hua usay live URL par bhi test karo.
+Phir VPS pe (ya seedha VPS pe git pull):
 
-**Deploy push ke foran baad trigger karna ho** to explicit sha dein (Railway ka git
-sync thora late ho sakta hai — warna wo PURANA commit redeploy kar deta hai):
-```powershell
-git rev-parse HEAD          # sha copy karo
-node scripts/railway/deploy.mjs <sha>
-node scripts/railway/status.mjs --watch
+```bash
+ssh ubuntu@57.129.161.5
+cd /home/ubuntu/S-Backup/sajda && git pull
+cd backend && npm install --omit=dev && pm2 restart sajda-api
 ```
+
+Verify:
+```powershell
+Invoke-WebRequest -Uri "https://sajdaapi.57.129.161.5.nip.io/api/health" -UseBasicParsing
+```
+
+> **Railway (legacy — sirf policy site ke liye):** Neeche ke Railway sections
+> ab sirf `policy-production-980a` (privacy policy site) ke liye applicable
+> hain. Backend ab VPS pe hai (Section 0).
 
 ---
 
@@ -154,16 +198,15 @@ flutter test
 ## Quick cheat-sheet
 
 ```powershell
-# Backend deploy (sab se common)
+# Backend deploy (sab se common) — VPS
 git push origin main
-node scripts/railway/status.mjs --watch
+ssh ubuntu@57.129.161.5 "cd /home/ubuntu/S-Backup/sajda && git pull && cd backend && npm install --omit=dev && pm2 restart sajda-api"
 
 # Health check
-curl https://backend-production-04292.up.railway.app/api/health
+curl https://sajdaapi.57.129.161.5.nip.io/api/health
 
-# Crash hua? 
-node scripts/railway/status.mjs
-node scripts/railway/logs.mjs <id>
+# Crash hua?
+ssh ubuntu@57.129.161.5 "pm2 logs sajda-api --lines 50"
 
 # App release
 flutter analyze; flutter test; flutter build appbundle --release
