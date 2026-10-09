@@ -6,6 +6,8 @@ import '../services/streak_v2_api.dart';
 import '../state/app_state.dart';
 import '../services/api_client.dart';
 import '../theme/app_theme.dart';
+import '../widgets/glass/glass_background.dart';
+import '../widgets/glass/glass_panel.dart';
 import '../widgets/streak/streak_components.dart';
 
 const _monthNamesEn = [
@@ -94,36 +96,42 @@ class _MonthHistoryViewState extends State<MonthHistoryView> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final monthName = app.isUrdu ? _monthNamesUr[_month - 1] : _monthNamesEn[_month - 1];
+    final accent = AppColors.accent(isDark);
+    final textMain = AppColors.textMain(isDark);
+    final textSub = AppColors.textSub(isDark);
+    final monthName =
+        app.isUrdu ? _monthNamesUr[_month - 1] : _monthNamesEn[_month - 1];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Month navigation
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              onPressed: _loading ? null : () => _shift(-1),
-              icon: const Icon(Icons.chevron_left_rounded),
-              color: isDark ? AppColors.darkText : AppColors.lightText,
-            ),
-            Text(
-              '$monthName $_year',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: isDark ? AppColors.darkText : AppColors.lightText,
+        GlassPanel(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                onPressed: _loading ? null : () => _shift(-1),
+                icon: const Icon(Icons.chevron_left_rounded),
+                color: accent,
               ),
-            ),
-            IconButton(
-              onPressed: _loading ? null : () => _shift(1),
-              icon: const Icon(Icons.chevron_right_rounded),
-              color: isDark ? AppColors.darkText : AppColors.lightText,
-            ),
-          ],
+              Text(
+                '$monthName $_year',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: textMain,
+                ),
+              ),
+              IconButton(
+                onPressed: _loading ? null : () => _shift(1),
+                icon: const Icon(Icons.chevron_right_rounded),
+                color: accent,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         if (_loading)
           const LoadingList()
         else if (_error != null)
@@ -134,9 +142,9 @@ class _MonthHistoryViewState extends State<MonthHistoryView> {
             onRetry: _load,
           )
         else ...[
-          _buildGrid(app, isDark),
+          _buildGrid(app, isDark, accent, textMain, textSub),
           const SizedBox(height: 14),
-          _buildLegend(app, isDark),
+          _buildLegend(app, isDark, accent, textSub),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -162,9 +170,15 @@ class _MonthHistoryViewState extends State<MonthHistoryView> {
     );
   }
 
-  Widget _buildGrid(AppState app, bool isDark) {
+  Widget _buildGrid(
+    AppState app,
+    bool isDark,
+    Color accent,
+    Color textMain,
+    Color textSub,
+  ) {
     final data = _data!;
-    final firstWeekday = DateTime(_year, _month, 1).weekday; // Mon=1..Sun=7
+    final firstWeekday = DateTime(_year, _month, 1).weekday;
     final daysInMonth = DateTime(_year, _month + 1, 0).day;
     final dayMap = {for (final d in data.calendar) d.day: d};
 
@@ -173,13 +187,8 @@ class _MonthHistoryViewState extends State<MonthHistoryView> {
       app.t('T', 'پ'), app.t('F', 'ج'), app.t('S', 'ہ'), app.t('S', 'ہ'),
     ];
 
-    return Container(
+    return GlassPanel(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
-      ),
       child: Column(
         children: [
           Row(
@@ -191,7 +200,7 @@ class _MonthHistoryViewState extends State<MonthHistoryView> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: isDark ? AppColors.darkMuted : AppColors.lightMutedText,
+                            color: textSub,
                           ),
                         ),
                       ),
@@ -225,35 +234,44 @@ class _MonthHistoryViewState extends State<MonthHistoryView> {
     );
   }
 
-  Widget _buildLegend(AppState app, bool isDark) {
+  Widget _buildLegend(
+    AppState app,
+    bool isDark,
+    Color accent,
+    Color textSub,
+  ) {
     final items = [
-      (AppColors.primary, app.t('Complete (5/5)', 'مکمل (۵/۵)')),
-      (AppColors.primary.withValues(alpha: 0.35), app.t('Partial', 'نامکمل')),
-      (isDark ? AppColors.darkSurfaceAlt : AppColors.lightDivider, app.t('Missed', 'چھوٹا')),
+      (accent, app.t('Complete (5/5)', 'مکمل (۵/۵)')),
+      (accent.withValues(alpha: 0.35), app.t('Partial', 'نامکمل')),
+      (isDark ? AppColors.darkSurfaceAlt : AppColors.lightDivider,
+          app.t('Missed', 'چھوٹا')),
     ];
-    return Wrap(
-      spacing: 16,
-      runSpacing: 6,
-      children: items
-          .map((i) => Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(color: i.$1, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    i.$2,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+    return GlassPanel(
+      darken: true,
+      radius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 6,
+        children: items
+            .map((i) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration:
+                          BoxDecoration(color: i.$1, shape: BoxShape.circle),
                     ),
-                  ),
-                ],
-              ))
-          .toList(),
+                    const SizedBox(width: 6),
+                    Text(
+                      i.$2,
+                      style: TextStyle(fontSize: 11.5, color: textSub),
+                    ),
+                  ],
+                ))
+            .toList(),
+      ),
     );
   }
 }
@@ -273,24 +291,25 @@ class _DayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AppColors.accent(dark);
     Color bg;
     Color fg;
     switch (state) {
       case 'complete':
-        bg = AppColors.primary;
+        bg = accent;
         fg = Colors.white;
         break;
       case 'today':
-        bg = AppColors.primary.withValues(alpha: 0.25);
-        fg = AppColors.primaryDeep;
+        bg = accent.withValues(alpha: 0.25);
+        fg = dark ? AppColors.darkText : AppColors.emerald;
         break;
       case 'missed':
         bg = dark ? AppColors.darkSurfaceAlt : AppColors.lightDivider;
         fg = dark ? AppColors.darkMuted : AppColors.lightMutedText;
         break;
       case 'partial':
-        bg = AppColors.primary.withValues(alpha: 0.35);
-        fg = AppColors.primaryDeep;
+        bg = accent.withValues(alpha: 0.35);
+        fg = dark ? AppColors.darkText : AppColors.emerald;
         break;
       default: // future / none
         bg = Colors.transparent;
@@ -306,13 +325,15 @@ class _DayCell extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           shape: BoxShape.circle,
-          border: state == 'today' ? Border.all(color: AppColors.primary, width: 1.6) : null,
+          border: state == 'today' ? Border.all(color: accent, width: 1.6) : null,
         ),
         child: Text(
           '$day',
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: state == 'complete' || state == 'today' ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: state == 'complete' || state == 'today'
+                ? FontWeight.w700
+                : FontWeight.w500,
             color: fg,
           ),
         ),
@@ -330,13 +351,9 @@ class _SummaryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassPanel(
+      radius: 14,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: dark ? AppColors.darkSurface : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
-      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -373,25 +390,27 @@ class SoloHistoryScreen extends StatelessWidget {
     final app = context.watch<AppState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(color: isDark ? AppColors.darkText : AppColors.lightText),
+        iconTheme: IconThemeData(color: AppColors.textMain(isDark)),
         title: Text(
           app.t('Solo history', 'اکیلے کی تاریخ'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: isDark ? AppColors.darkText : AppColors.lightText,
+            color: AppColors.textMain(isDark),
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        child: MonthHistoryView(
-          title: app.t('Solo history', 'اکیلے کی تاریخ'),
-          fetch: (y, m) => StreakV2Api.instance.getSoloHistory(year: y, month: m),
+      body: GlassBackground(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          child: MonthHistoryView(
+            title: app.t('Solo history', 'اکیلے کی تاریخ'),
+            fetch: (y, m) => StreakV2Api.instance.getSoloHistory(year: y, month: m),
+          ),
         ),
       ),
     );
