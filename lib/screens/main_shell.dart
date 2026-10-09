@@ -9,18 +9,15 @@ import '../state/app_state.dart';
 import '../state/streak_state.dart';
 import '../services/api_client.dart';
 import '../services/ayah_notification_service.dart';
-import '../services/dua_notification_service.dart';
 import '../services/notification_router.dart';
 import '../services/prayer_checkin_service.dart';
 import '../services/prayer_notification_service.dart';
 import '../services/push_service.dart';
-import '../services/wazifa_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/mini_player_bar.dart';
 import 'adhkar_screen.dart';
 import 'calendar_screen.dart';
 import 'home_screen.dart';
-import 'islamic_screen.dart';
 import 'mushaf_screen.dart';
 import 'names_screen.dart';
 import 'pillars_screen.dart';
@@ -331,12 +328,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   Future<void> _scheduleDailyNotifications(BuildContext context) async {
     final state = context.read<AppState>();
     final tz = state.locationTimezone;
-    if (state.duaNotificationsEnabled) {
-      await DuaNotificationService.instance.scheduleNext7Days(timezone: tz);
-    }
-    if (state.wazifaNotificationsEnabled) {
-      await WazifaNotificationService.instance.scheduleNext7Days(timezone: tz);
-    }
 
     var zuhr = 13;
     var zuhrMin = 30;
@@ -426,13 +417,6 @@ List<MoreItem> moreItems(BuildContext context) {
       icon: Icons.volunteer_activism_outlined,
       color: const Color(0xFF1E8449),
       screen: const AdhkarScreen(),
-    ),
-    MoreItem(
-      title: 'Islamic Library',
-      titleUr: 'دینی لائبریری',
-      icon: Icons.local_library_outlined,
-      color: const Color(0xFF148F77),
-      screen: const IslamicScreen(),
     ),
     MoreItem(
       title: '99 Names of Allah',

@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sajda_dataplus/data/static_data.dart';
-import 'package:sajda_dataplus/models/models.dart';
 import 'package:sajda_dataplus/services/api_client.dart';
 
 void main() {
@@ -17,21 +16,6 @@ void main() {
   test('nearestCity returns nearest city', () {
     final city = nearestCity(24.8607, 67.0011);
     expect(city?.name, 'Karachi');
-  });
-
-  test('DuaModel parses from JSON', () {
-    final dua = DuaModel.fromJson({
-      '_id': 'abc',
-      'category': 'morning',
-      'title': {'en': 'Morning Dua', 'ur': 'صبح کی دعا'},
-      'arabic': 'بِسْمِ اللَّهِ',
-      'urdu': 'اللہ کے نام سے',
-      'english': 'In the name of Allah',
-      'transliteration': 'Bismillah',
-      'reference': 'Bukhari',
-    });
-    expect(dua.title('en'), 'Morning Dua');
-    expect(dua.title('ur'), 'صبح کی دعا');
   });
 
   test('ApiClient exposes base URL', () {

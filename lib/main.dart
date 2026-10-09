@@ -12,13 +12,11 @@ import 'services/ayah_notification_service.dart';
 import 'services/adhkar_service.dart';
 import 'services/azkar_audio_provider.dart';
 import 'services/deep_link_service.dart';
-import 'services/dua_notification_service.dart';
 import 'services/firebase_auth_service.dart';
 import 'services/notification_router.dart';
 import 'services/prayer_notification_service.dart';
 import 'services/quran_translation_provider.dart';
 import 'services/tafsir_provider.dart';
-import 'services/wazifa_notification_service.dart';
 import 'services/auth_service.dart';
 import 'screens/group_preview_screen.dart';
 import 'state/app_state.dart';
@@ -46,8 +44,6 @@ Future<void> main() async {
   // A per-service initialize() stole the tap callback from the others.
   await NotificationRouter.instance.ensureInitialized();
   await PrayerNotificationService.instance.init();
-  await DuaNotificationService.instance.init();
-  await WazifaNotificationService.instance.init();
   await AyahNotificationService.instance.init();
   // Firebase powers passwordless (magic link) auth for the Streak system.
   // Failure must never block the rest of the app.

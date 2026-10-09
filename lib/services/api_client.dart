@@ -328,35 +328,6 @@ class ApiClient {
         .toList();
   }
 
-  // ---------- Duas ----------
-
-  Future<List<DuaModel>> getDuas({String? category}) async {
-    final json = await _get('/duas${category != null ? '?category=$category' : ''}');
-    return (json['data'] as List? ?? [])
-        .map((e) => DuaModel.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<DuaModel?> getDailyDua() async {
-    final json = await _get('/duas/daily');
-    final data = json['data'];
-    return data == null ? null : DuaModel.fromJson(data as Map<String, dynamic>);
-  }
-
-  // ---------- Wazifa ----------
-
-  Future<WazifaModel?> getDailyWazifa() async {
-    final json = await _get('/wazifas/daily');
-    final data = json['data'];
-    return data == null ? null : WazifaModel.fromJson(data as Map<String, dynamic>);
-  }
-
-  Future<WazifaModel?> getWazifaByDay(int day) async {
-    final json = await _get('/wazifas/day/$day');
-    final data = json['data'];
-    return data == null ? null : WazifaModel.fromJson(data as Map<String, dynamic>);
-  }
-
   // ---------- Ayat of the Day (multi-language) ----------
 
   /// Returns the ayat translations document:

@@ -223,17 +223,3 @@ const List<AllahName> allahNames = [
   AllahName(number: 98, arabic: 'الرَّشِيْدُ', en: 'Ar-Rashid', ur: 'الرشید', meaning: 'The Guide to the Right Path', meaningUr: 'راہ دکھانے والا'),
   AllahName(number: 99, arabic: 'الصَّبُوْرُ', en: 'As-Sabur', ur: 'الصبور', meaning: 'The Patient', meaningUr: 'صبر کرنے والا'),
 ];
-
-// ---------- Dua categories ----------
-
-const List<String> duaCategories = [
-  'morning',
-  'evening',
-  'sleep',
-  'food',
-  'travel',
-  'hardship',
-  'forgiveness',
-  'protection',
-  'ramadan',
-];

@@ -27,8 +27,6 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static const _kThemeMode = 'sajda_theme_mode';
   static const _kCity = 'sajda_city';
   static const _kNotifications = 'sajda_notifications';
-  static const _kDuaNotifications = 'sajda_dua_notifications';
-  static const _kWazifaNotifications = 'sajda_wazifa_notifications';
   static const _kAyahNotifications = 'sajda_ayah_notifications';
   static const _kPrayerCheckin = 'sajda_prayer_checkin';
   static const _kOnboarding = 'sajda_onboarding_done';
@@ -54,8 +52,6 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   /// Cached platform brightness so [darkMode] is correct while in system mode.
   bool _platformDark = false;
   bool _notificationsEnabled = false;
-  bool _duaNotificationsEnabled = false;
-  bool _wazifaNotificationsEnabled = false;
   bool _ayahNotificationsEnabled = false;
   bool _prayerCheckinEnabled = false;
   bool _onboardingDone = false;
@@ -120,8 +116,6 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool get notificationsEnabled => _notificationsEnabled;
-  bool get duaNotificationsEnabled => _duaNotificationsEnabled;
-  bool get wazifaNotificationsEnabled => _wazifaNotificationsEnabled;
   bool get ayahNotificationsEnabled => _ayahNotificationsEnabled;
   bool get prayerCheckinEnabled => _prayerCheckinEnabled;
   bool get onboardingDone => _onboardingDone;
@@ -206,9 +200,6 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         WidgetsBinding.instance.platformDispatcher.platformBrightness ==
             Brightness.dark;
     _notificationsEnabled = prefs.getBool(_kNotifications) ?? true;
-    _duaNotificationsEnabled = prefs.getBool(_kDuaNotifications) ?? true;
-    _wazifaNotificationsEnabled =
-        prefs.getBool(_kWazifaNotifications) ?? true;
     _ayahNotificationsEnabled = prefs.getBool(_kAyahNotifications) ?? true;
     _prayerCheckinEnabled = prefs.getBool(_kPrayerCheckin) ?? true;
     _onboardingDone = prefs.getBool(_kOnboarding) ?? false;
@@ -712,20 +703,6 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kNotifications, enabled);
-  }
-
-  Future<void> setDuaNotificationsEnabled(bool enabled) async {
-    _duaNotificationsEnabled = enabled;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kDuaNotifications, enabled);
-  }
-
-  Future<void> setWazifaNotificationsEnabled(bool enabled) async {
-    _wazifaNotificationsEnabled = enabled;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kWazifaNotifications, enabled);
   }
 
   Future<void> setAyahNotificationsEnabled(bool enabled) async {

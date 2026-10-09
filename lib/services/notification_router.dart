@@ -6,8 +6,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../screens/group_dashboard_screen.dart';
 import '../screens/group_settings_screen.dart';
-import '../screens/dua_screen.dart';
-import '../screens/wazifa_screen.dart';
 import 'streak_v2_api.dart';
 
 /// The ONE place every notification tap lands — local plugin taps, FCM
@@ -109,7 +107,7 @@ class NotificationRouter {
   }
 
   /// Public entry for any raw payload string (JSON map or legacy plain
-  /// string such as `'daily_dua'`).
+  /// string such as `'daily_ayah'`).
   void handlePayload(String? raw, {String? actionId}) {
     if (raw == null || raw.isEmpty) return;
     final data = _decode(raw);
@@ -134,12 +132,6 @@ class NotificationRouter {
   void _route(Map<String, dynamic> data) {
     final type = data['type']?.toString() ?? '';
     switch (type) {
-      case 'daily_wazifa':
-        _push((_) => const WazifaScreen());
-        break;
-      case 'daily_dua':
-        _push((_) => const DuaScreen());
-        break;
       case 'daily_ayah':
       case 'prayer_azan':
         // Home tab (0) shows the ayah of the day and the prayer schedule.
