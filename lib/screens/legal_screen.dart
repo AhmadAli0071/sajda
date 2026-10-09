@@ -10,12 +10,12 @@ class LegalScreen extends StatelessWidget {
 
   static const _privacyPolicyUrl = String.fromEnvironment(
     'PRIVACY_POLICY_URL',
-    defaultValue: 'https://sajdapolicy.57.129.161.5.nip.io',
+    defaultValue: 'https://policy.sajda.online',
   );
 
   static const _deleteAccountUrl = String.fromEnvironment(
     'DELETE_ACCOUNT_URL',
-    defaultValue: 'https://sajdapolicy.57.129.161.5.nip.io/delete-account/',
+    defaultValue: 'https://policy.sajda.online/delete-account/',
   );
 
   Future<void> _openDeleteAccount(BuildContext context) async {

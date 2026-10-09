@@ -1,4 +1,4 @@
-# Deployment Guide — Sajda App
+﻿# Deployment Guide â€” Sajda App
 
 > Ye guide Sep 20, 2026 ke Railway deployment se shuru hui thi.
 > **Oct 9, 2026 se backend self-hosted OVH VPS pe hai** (neeche Section 0).
@@ -9,14 +9,14 @@
 
 | Cheez | Detail |
 |---|---|
-| **Backend** (`/backend`, Node.js) | **OVH VPS** (57.129.161.5) — PM2 + Nginx + Let's Encrypt |
-| **Live URL** | `https://sajdaapi.57.129.161.5.nip.io/api` |
-| **Health check** | `GET /api/health` → `200` |
+| **Backend** (`/backend`, Node.js) | **OVH VPS** (57.129.161.5) â€” PM2 + Nginx + Let's Encrypt |
+| **Live URL** | `https://api.sajda.online/api` |
+| **Health check** | `GET /api/health` â†’ `200` |
 | **Folder** | `/home/ubuntu/S-Backup/sajda` |
 | **Port** | `5001` (internal), nginx se proxy |
 | **PM2 name** | `sajda-api` |
-| **DB** | MongoDB Atlas (cloud — local MongoDB nahi) |
-| **VPS details** | repo root `vps.md` (gitignored — **GitHub pe kabhi push mat karna**) |
+| **DB** | MongoDB Atlas (cloud â€” local MongoDB nahi) |
+| **VPS details** | repo root `vps.md` (gitignored â€” **GitHub pe kabhi push mat karna**) |
 
 ### VPS pe redeploy (backend change ke baad)
 
@@ -26,7 +26,7 @@ cd /home/ubuntu/S-Backup/sajda
 git pull
 cd backend && npm install --omit=dev
 pm2 restart sajda-api
-curl -s https://sajdaapi.57.129.161.5.nip.io/api/health
+curl -s https://api.sajda.online/api/health
 ```
 
 ### VPS troubleshooting
@@ -48,15 +48,15 @@ sudo certbot certificates   # SSL expiry check (auto-renew on)
 
 | Cheez | Kahan jati hai | Kaise |
 |---|---|---|
-| **Backend** (`/backend` folder, Node.js) | **OVH VPS** (see Section 0) | SSH → `git pull` → `pm2 restart sajda-api` |
-| **Privacy policy site** | **Railway** (`policy-production-980a`) | GitHub push → auto-deploy |
-| **Flutter app** (Android) | **Play Console** | Local build → AAB upload → review |
+| **Backend** (`/backend` folder, Node.js) | **OVH VPS** (see Section 0) | SSH â†’ `git pull` â†’ `pm2 restart sajda-api` |
+| **Privacy policy site** | **Railway** (`policy-production-980a`) | GitHub push â†’ auto-deploy |
+| **Flutter app** (Android) | **Play Console** | Local build â†’ AAB upload â†’ review |
 | Frontend web | Kuch nahi | App hi sab kuch hai |
 
-**Live backend URL:** `https://sajdaapi.57.129.161.5.nip.io/api`
-**Health check:** `GET /api/health` → `200` hona chahiye
+**Live backend URL:** `https://api.sajda.online/api`
+**Health check:** `GET /api/health` â†’ `200` hona chahiye
 
-**App endpoint source:** `lib/config.dart` (`AppConfig.apiBaseUrl`) —
+**App endpoint source:** `lib/config.dart` (`AppConfig.apiBaseUrl`) â€”
 sab API calls (`api_client.dart`, `auth_service.dart`) isi se aati hain.
 Naya domain lage to sirf `config.dart` badlo.
 
@@ -67,10 +67,10 @@ Naya domain lage to sirf `config.dart` badlo.
 **Railway account:** tehryym01@gmail.com (workspace: tehryym01-hub's Projects)
 
 **API token:** repo root ki `.railway_token` file mein hai.
-- Ye file `.gitignore` mein hai — **GitHub par kabhi push nahi hogi** (token leak = poora account hack)
-- `backend/.env` wala purana token **DEAD** hai — use mat karna
+- Ye file `.gitignore` mein hai â€” **GitHub par kabhi push nahi hogi** (token leak = poora account hack)
+- `backend/.env` wala purana token **DEAD** hai â€” use mat karna
 
-**IDs (constants — ye kabhi nahi badalte):**
+**IDs (constants â€” ye kabhi nahi badalte):**
 
 | Cheez | ID |
 |---|---|
@@ -83,14 +83,14 @@ Naya domain lage to sirf `config.dart` badlo.
 ```
 https://backboard.railway.app/graphql/v2
 ```
-> ⚠️ `/graphql` (bina v2) **404** deta hai. CLI (`railway up` etc.) token env var ke sath
-> "Unauthorized" deta hai — **CLI use mat karo, seedha API scripts use karo.**
+> âš ï¸ `/graphql` (bina v2) **404** deta hai. CLI (`railway up` etc.) token env var ke sath
+> "Unauthorized" deta hai â€” **CLI use mat karo, seedha API scripts use karo.**
 
 ---
 
 ## 3. Ready-made scripts (repo mein maujood)
 
-Repo: `scripts/railway/` — token khud `.railway_token` se parhte hain.
+Repo: `scripts/railway/` â€” token khud `.railway_token` se parhte hain.
 
 ```powershell
 # Naya deploy trigger karo (bina sha = latest commit)
@@ -111,7 +111,7 @@ node scripts/railway/logs.mjs <deploymentId>     # short id (8 letters) bhi chal
 
 ---
 
-## 4. Flow A — Backend deployment (90% cases)
+## 4. Flow A â€” Backend deployment (90% cases)
 
 Backend change kiya? Bas:
 
@@ -131,10 +131,10 @@ cd backend && npm install --omit=dev && pm2 restart sajda-api
 
 Verify:
 ```powershell
-Invoke-WebRequest -Uri "https://sajdaapi.57.129.161.5.nip.io/api/health" -UseBasicParsing
+Invoke-WebRequest -Uri "https://api.sajda.online/api/health" -UseBasicParsing
 ```
 
-> **Railway (legacy — sirf policy site ke liye):** Neeche ke Railway sections
+> **Railway (legacy â€” sirf policy site ke liye):** Neeche ke Railway sections
 > ab sirf `policy-production-980a` (privacy policy site) ke liye applicable
 > hain. Backend ab VPS pe hai (Section 0).
 
@@ -142,28 +142,28 @@ Invoke-WebRequest -Uri "https://sajdaapi.57.129.161.5.nip.io/api/health" -UseBas
 
 ## 5. Deploy FAIL ho jaye to
 
-- **Ghabrao mat:** fail hui deployment live app ko nahi badalti — **purana chalta rehta hai.**
+- **Ghabrao mat:** fail hui deployment live app ko nahi badalti â€” **purana chalta rehta hai.**
 - Logs dekho:
 ```powershell
 node scripts/railway/status.mjs            # FAILED deployment ka id note karo
 node scripts/railway/logs.mjs <id>         # asli error yahan hoti hai
 ```
-- Fix karo → commit → push → phir se.
+- Fix karo â†’ commit â†’ push â†’ phir se.
 
 ---
 
-## 6. Troubleshooting — aaj ke asli sabak
+## 6. Troubleshooting â€” aaj ke asli sabak
 
 | Masla | Wajah | Hal |
 |---|---|---|
-| `service unavailable` healthcheck attempts, deploy FAILED | Server boot par crash (e.g. kisi file ne aisa import kiya jo service export nahi karti) | `logs.mjs` — crash ka exact file/error dikhta hai |
+| `service unavailable` healthcheck attempts, deploy FAILED | Server boot par crash (e.g. kisi file ne aisa import kiya jo service export nahi karti) | `logs.mjs` â€” crash ka exact file/error dikhta hai |
 | `CLI Unauthorized` despite token | Railway CLI token env var theek se nahi leta | CLI chhoro, scripts use karo |
 | GraphQL `404` | Ghalat endpoint (`/graphql`) | `/graphql/v2` use karo |
 | `Unknown argument "serviceId" on field "Query.deployments"` | Ghalat query shape | Deployments **environment(id) ke andar** se lo |
 | `Field "meta" must not have a selection` | `meta` scalar hai, sub-fields nahi | Sirf `meta` likho, `meta { ... }` nahi |
-| `Cannot query field "edges" on type "Log"` | `deploymentLogs` flat list deta hai | `{ message severity timestamp }` — edges nahi |
+| `Cannot query field "edges" on type "Log"` | `deploymentLogs` flat list deta hai | `{ message severity timestamp }` â€” edges nahi |
 | Deploy SUCCESS par purana code live | `latestCommit: true` ne cached purana sha liya ("reason: redeploy") | Explicit `commitSha` pass karo |
-| Local test mein server 30s tak kuch nahi karta | `connectDB()` pehle hoti hai — bina MongoDB ke wo ~30s timeout lagati hai | Wait karo ya local Mongo chalao; deploy se pehle `node --check` + import-graph test kaafi hai |
+| Local test mein server 30s tak kuch nahi karta | `connectDB()` pehle hoti hai â€” bina MongoDB ke wo ~30s timeout lagati hai | Wait karo ya local Mongo chalao; deploy se pehle `node --check` + import-graph test kaafi hai |
 
 ---
 
@@ -174,36 +174,36 @@ node scripts/railway/logs.mjs <id>         # asli error yahan hoti hai
 # 2. Build
 flutter build appbundle --release
 # 3. Output: build\app\outputs\bundle\release\app-release.aab
-# 4. Play Console → Production → Create release → AAB upload
+# 4. Play Console â†’ Production â†’ Create release â†’ AAB upload
 ```
 Release ke pehle:
 ```powershell
 flutter analyze
 flutter test
 ```
-> Note: Railway/Play Console ek doosre se koi taluq nahi — backend ka deploy
+> Note: Railway/Play Console ek doosre se koi taluq nahi â€” backend ka deploy
 > review ke doran bhi safe hai, chal rahi build par asar nahi hota.
 
 ---
 
 ## 8. Naya Railway token banana (agar purana ghair-maujood ho jaye)
 
-1. https://railway.com → login (tehryym01@gmail.com)
-2. Workspace Settings → **Tokens** (ya Account Settings → API Tokens)
+1. https://railway.com â†’ login (tehryym01@gmail.com)
+2. Workspace Settings â†’ **Tokens** (ya Account Settings â†’ API Tokens)
 3. Naya token banao, copy karo
-4. Repo root ki `.railway_token` file mein paste kar do — bas, scripts phir chalengi
+4. Repo root ki `.railway_token` file mein paste kar do â€” bas, scripts phir chalengi
 
 ---
 
 ## Quick cheat-sheet
 
 ```powershell
-# Backend deploy (sab se common) — VPS
+# Backend deploy (sab se common) â€” VPS
 git push origin main
 ssh ubuntu@57.129.161.5 "cd /home/ubuntu/S-Backup/sajda && git pull && cd backend && npm install --omit=dev && pm2 restart sajda-api"
 
 # Health check
-curl https://sajdaapi.57.129.161.5.nip.io/api/health
+curl https://api.sajda.online/api/health
 
 # Crash hua?
 ssh ubuntu@57.129.161.5 "pm2 logs sajda-api --lines 50"

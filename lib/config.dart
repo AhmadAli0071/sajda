@@ -1,7 +1,7 @@
 class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://sajdaapi.57.129.161.5.nip.io/api',
+    defaultValue: 'https://api.sajda.online/api',
   );
 
   static const String appName = 'Sajda: Daily Athan & Qibla';

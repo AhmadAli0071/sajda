@@ -11,4 +11,4 @@ jobs:
     steps:
       - name: Ping backend
         run: |
-          curl -s https://sajdaapi.57.129.161.5.nip.io/api/health || echo "Ping failed"
+          curl -s https://api.sajda.online/api/health || echo "Ping failed"

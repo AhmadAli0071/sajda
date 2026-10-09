@@ -68,7 +68,8 @@ app.use(compression());
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 app.use(cors({
   origin: [
-    'https://sajdapolicy.57.129.161.5.nip.io',
+    'https://policy.sajda.online',
+    'https://sajdapolicy.57.129.161.5.nip.io', // legacy during migration
     'https://policy-production-980a.up.railway.app', // legacy policy site during migration
     'https://sajda-privacy.onrender.com', // legacy policy site during migration
   ],
