@@ -124,6 +124,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -216,8 +217,10 @@ class _CalendarGrid extends StatelessWidget {
         ? ['پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ', 'اتوار']
         : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+    final topPad = MediaQuery.of(context).padding.top + kToolbarHeight + 8;
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      padding: EdgeInsets.fromLTRB(16, topPad, 16, 32),
       children: [
         GlassPanel(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),

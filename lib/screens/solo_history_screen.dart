@@ -391,6 +391,7 @@ class SoloHistoryScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -406,7 +407,12 @@ class SoloHistoryScreen extends StatelessWidget {
       ),
       body: GlassBackground(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+            20,
+            32,
+          ),
           child: MonthHistoryView(
             title: app.t('Solo history', 'اکیلے کی تاریخ'),
             fetch: (y, m) => StreakV2Api.instance.getSoloHistory(year: y, month: m),
