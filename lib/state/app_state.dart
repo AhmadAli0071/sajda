@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone_finder/timezone_finder.dart';
 
@@ -39,6 +40,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static const _kTasbeehVibration = 'sajda_tasbeeh_vibration';
   static const _kPrayerMethod = 'sajda_prayer_method';
   static const _kAsrSchool = 'sajda_asr_school';
+  static const _kPrayerMethodManual = 'sajda_prayer_method_manual';
   static const _kContentLang = 'sajda_content_lang';
   static const _kHijriAdjust = 'sajda_hijri_adjust';
 
@@ -77,6 +79,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool _tasbeehVibration = true;
   int _prayerMethod = 2; // ISNA
   int _asrSchool = 0; // Shafi/Standard
+  /// True when the user picked a calculation method / Asr school manually.
+  /// Country auto-detection must never overwrite a manual choice.
+  bool _prayerMethodManual = false;
   int _hijriAdjust = 0; // Hijri date offset in days (-2..+2)
 
   String? _authToken;
@@ -135,6 +140,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool get tasbeehVibration => _tasbeehVibration;
   int get prayerMethod => _prayerMethod;
   int get asrSchool => _asrSchool;
+  bool get prayerMethodManual => _prayerMethodManual;
   int get hijriAdjust => _hijriAdjust;
 
   String get locationSource => _location?.source ?? 'MANUAL';
@@ -234,6 +240,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _tasbeehVibration = prefs.getBool(_kTasbeehVibration) ?? true;
     _prayerMethod = prefs.getInt(_kPrayerMethod) ?? 2;
     _asrSchool = prefs.getInt(_kAsrSchool) ?? 0;
+    _prayerMethodManual = prefs.getBool(_kPrayerMethodManual) ?? false;
     // Push the persisted Hijri offset into the service BEFORE any UI or API
     // call converts a date (home header, calendar grid, prayer payloads).
     _hijriAdjust = (prefs.getInt(_kHijriAdjust) ?? 0).clamp(-2, 2);
@@ -361,9 +368,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       // Resolve the real IANA zone from coordinates. nearestCity() has no
       // distance cap, so GPS users outside the 27-city table would otherwise
       // inherit the timezone of the nearest listed city (wrong for most of
-      // the world, e.g. Berlin -> Europe/Istanbul).
+      // the world, e.g. Berlin -> Europe/Istanbul). _resolveTimezone falls
+      // back to the device timezone, never a hardcoded city.
       String timezone = await _resolveTimezone(lat, lng);
-      if (timezone == 'Asia/Karachi' && nearest != null) {
+      if (nearest != null &&
+          (timezone.isEmpty || timezone == 'UTC') &&
+          nearest.timezone.isNotEmpty) {
         timezone = nearest.timezone;
       }
 
@@ -487,18 +497,29 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     return city;
   }
 
-  /// Resolve IANA timezone from lat/lng using timezone_finder (offline, fast, accurate).
+  /// Resolve IANA timezone from lat/lng: offline timezone_finder first,
+  /// then the device's own timezone, finally UTC. Never hardcode a city
+  /// timezone — that broke non-Pakistani users by an hour (DST) or more.
   Future<String> _resolveTimezone(double lat, double lng) async {
     try {
       final loc = findLocation(lat, lng);
       if (loc != null && loc.name.isNotEmpty) return loc.name;
     } catch (_) {}
-    return 'Asia/Karachi';
+    try {
+      final tz = await FlutterTimezone.getLocalTimezone();
+      if (tz.identifier.isNotEmpty) return tz.identifier;
+    } catch (_) {}
+    return 'UTC';
   }
 
   /// Public reverse-geocode helper used by the location setup screen.
   Future<String?> reverseGeocodePublic(double lat, double lng) =>
       _reverseGeocode(lat, lng);
+
+  /// Public timezone resolver for screens that build a LocationModel
+  /// themselves (e.g. GPS confirm on the location setup screen).
+  Future<String> resolveTimezonePublic(double lat, double lng) =>
+      _resolveTimezone(lat, lng);
 
   Future<String?> _reverseGeocode(double lat, double lng) async {
     try {
@@ -756,18 +777,38 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await prefs.setBool(_kTasbeehVibration, value);
   }
 
-  Future<void> setPrayerMethod(int method) async {
+  Future<void> setPrayerMethod(int method, {bool manual = true}) async {
     _prayerMethod = method;
+    if (manual) _prayerMethodManual = true;
+    // Location/method/school inputs changed — never serve stale times.
+    ApiClient.instance.invalidatePrayerTimesCache();
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kPrayerMethod, method);
+    if (manual) await prefs.setBool(_kPrayerMethodManual, true);
   }
 
-  Future<void> setAsrSchool(int school) async {
+  Future<void> setAsrSchool(int school, {bool manual = true}) async {
     _asrSchool = school;
+    if (manual) _prayerMethodManual = true;
+    ApiClient.instance.invalidatePrayerTimesCache();
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kAsrSchool, school);
+    if (manual) await prefs.setBool(_kPrayerMethodManual, true);
+  }
+
+  /// Clears the manual override and re-applies country-based detection.
+  Future<void> resetPrayerCalculationToAuto() async {
+    _prayerMethodManual = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kPrayerMethodManual);
+    final country = displayCountryName;
+    if (country.isNotEmpty) {
+      await _autoSetPrayerSettings(country);
+    }
+    ApiClient.instance.invalidatePrayerTimesCache();
+    notifyListeners();
   }
 
   /// Auto-select calculation method & Asr school by country.
@@ -829,10 +870,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Auto-apply calculation method & Asr school based on country.
+  /// Skipped when the user has manually chosen a method/school — the
+  /// manual preference always wins over country auto-detection.
   Future<void> _autoSetPrayerSettings(String country) async {
+    if (_prayerMethodManual) return;
     final (method, school) = _methodForCountry(country);
-    if (_prayerMethod != method) await setPrayerMethod(method);
-    if (_asrSchool != school) await setAsrSchool(school);
+    if (_prayerMethod != method) await setPrayerMethod(method, manual: false);
+    if (_asrSchool != school) await setAsrSchool(school, manual: false);
   }
 
   String get prayerCityParam {

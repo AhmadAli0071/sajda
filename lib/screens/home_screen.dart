@@ -7,8 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:quran/quran.dart' as q;
 
 import '../config.dart';
+import '../data/static_data.dart';
 import '../models/models.dart';
-import '../services/allah_names.dart';
 import '../services/api_client.dart';
 import '../services/date_service.dart';
 import '../services/quran_service.dart';
@@ -367,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Text(
                             _nameIndex >= 0
-                                ? kAllahNames[_nameIndex].arabic
+                                ? allahNames[_nameIndex].arabic
                                 : state.t('Good Morning', 'صبح بخیر'),
                             style: TextStyle(
                               color: Theme.of(context)
@@ -381,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 2),
                           Text(
                             _nameIndex >= 0
-                                ? '${kAllahNames[_nameIndex].urdu} • ${state.displayCityName}'
+                                ? '${state.isUrdu ? allahNames[_nameIndex].meaningUr : allahNames[_nameIndex].meaning} • ${state.displayCityName}'
                                 : '${state.displayCityName}, ${state.displayCountryName}',
                             style: TextStyle(
                               color: Theme.of(context).textTheme.bodySmall?.color,
@@ -440,9 +440,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(width: 7),
                           Expanded(
                             child: Text(
+                              // Date only — weekday removed per design.
                               state.isUrdu
-                                  ? state.todayHijriDate.fullWithWeekdayAr
-                                  : state.todayHijriDate.fullWithWeekday,
+                                  ? state.todayHijriDate.fullAr
+                                  : state.todayHijriDate.full,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.8),
                                 fontSize: 12.5,
@@ -624,17 +625,22 @@ class _HomeScreenState extends State<HomeScreen> {
                               size: 15,
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              clock.current != null
-                                  ? '${state.t('Ends in', 'باقی')} ${_fmtCountdown(state, clock.endsInSec)}'
-                                  : '${state.t('Starts in', 'شروع ہونے میں')} ${_fmtCountdown(state, clock.endsInSec)}',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.92),
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
+                            // Flexible (not fixed): at large font scales or
+                            // in long Urdu strings the countdown must shrink
+                            // instead of overflowing the row.
+                            Flexible(
+                              child: Text(
+                                clock.current != null
+                                    ? '${state.t('Ends in', 'باقی')} ${_fmtCountdown(state, clock.endsInSec)}'
+                                    : '${state.t('Starts in', 'شروع ہونے میں')} ${_fmtCountdown(state, clock.endsInSec)}',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(width: 10),
                             if (clock.current != null)
@@ -741,8 +747,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              // 2 columns on phones, 4 on wide/tablet screens — a static
+              // crossAxisCount left huge gaps on pads.
               sliver: SliverGrid.count(
-                crossAxisCount: 2,
+                crossAxisCount:
+                    MediaQuery.of(context).size.width >= 720 ? 4 : 2,
                 mainAxisSpacing: 14,
                 crossAxisSpacing: 14,
                 childAspectRatio: 0.95,

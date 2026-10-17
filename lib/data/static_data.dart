@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class CityData {
   final String name;
   final String country;
@@ -223,3 +225,20 @@ const List<AllahName> allahNames = [
   AllahName(number: 98, arabic: 'الرَّشِيْدُ', en: 'Ar-Rashid', ur: 'الرشید', meaning: 'The Guide to the Right Path', meaningUr: 'راہ دکھانے والا'),
   AllahName(number: 99, arabic: 'الصَّبُوْرُ', en: 'As-Sabur', ur: 'الصبور', meaning: 'The Patient', meaningUr: 'صبر کرنے والا'),
 ];
+
+/// Random Asma-ul-Husna picker shared by the home greeting.
+/// Avoids repeating the name shown on the previous app launch.
+class AllahNames {
+  static const _kPrefKey = 'sajda_allah_name_index';
+
+  static Future<int> pickFreshIndex() async {
+    final prefs = await SharedPreferences.getInstance();
+    final last = prefs.getInt(_kPrefKey) ?? -1;
+    var idx = math.Random().nextInt(allahNames.length);
+    if (allahNames.length > 1 && idx == last) {
+      idx = (idx + 1) % allahNames.length;
+    }
+    await prefs.setInt(_kPrefKey, idx);
+    return idx;
+  }
+}

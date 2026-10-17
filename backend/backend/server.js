@@ -20,10 +20,11 @@ import wazifaRoutes from './routes/wazifaRoutes.js';
 import hijriRoutes from './routes/hijriRoutes.js';
 import authRoutes from './routes/auth.js';
 import streakRoutes from './routes/streakRoutes.js';
-import streakV2Routes from './routes/streakV2Routes.js';
+import streakV2Routes, { nudgeRouter } from './routes/streakV2Routes.js';
 import quranRoutes from './routes/quranRoutes.js';
 import ayatRoutes from './routes/ayatRoutes.js';
 import adhkarRoutes from './routes/adhkarRoutes.js';
+import appConfigRoutes from './routes/appConfigRoutes.js';
 import { autoSeedContent } from './services/autoSeed.js';
 
 dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
@@ -121,9 +122,15 @@ app.use('/api/streak', authenticateToken, checkDBConnection, streakRoutes);
 // has no route matching `v2/...`, so requests fall through to this mount.
 // v1 stays mounted for older app versions until they are retired.
 app.use('/api/streak/v2', authenticateToken, checkDBConnection, streakV2Routes);
+// Spec-exact nudge alias: POST /api/group/v2/nudge (same handler as
+// /api/streak/v2/groups/nudge) for the documented Group Prayer Circle path.
+app.use('/api/group/v2', authenticateToken, checkDBConnection, nudgeRouter);
 app.use('/api/quran', checkDBConnection, quranRoutes);
 app.use('/api/ayat', checkDBConnection, ayatRoutes);
 app.use('/api/adhkar', checkDBConnection, adhkarRoutes);
+// Public app-config (force-update gate) — no auth, no DB dependency so it
+// answers even during a DB outage (failing closed would lock users out).
+app.use('/api/app-config', appConfigRoutes);
 
 // Fallback: serve index.html for any non-API route (SPA)
 app.get('*', (req, res) => {

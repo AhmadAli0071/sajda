@@ -95,6 +95,10 @@ class _QiblaScreenState extends State<QiblaScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final dark = Theme.of(context).brightness == Brightness.dark;
+    // Scale the dial with the screen instead of a fixed 230px so it fits
+    // small phones (320dp) and never exceeds ~280px on tablets.
+    final compassSize =
+        (MediaQuery.of(context).size.width * 0.62).clamp(180.0, 280.0);
 
     return Scaffold(
       appBar: AppBar(
@@ -120,6 +124,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
                   child: QiblaCompass(
                     qibla: _qibla!,
                     isUrdu: state.isUrdu,
+                    size: compassSize,
                   ),
                 ),
 
@@ -170,21 +175,25 @@ class _QiblaScreenState extends State<QiblaScreen> {
                               color: AppColors.primary,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              state.t(
-                                    'Distance to Kaaba: ${_qibla!.distance} km',
-                                    'کعبہ تک فاصلہ: ${_qibla!.distance} کلومیٹر',
-                                  )
-                                  .replaceFirst(
-                                    '${_qibla!.distance}',
-                                    _qibla!.distance.toString(),
-                                  ),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
+                            Flexible(
+                              child: Text(
+                                state.t(
+                                      'Distance to Kaaba: ${_qibla!.distance} km',
+                                      'کعبہ تک فاصلہ: ${_qibla!.distance} کلومیٹر',
+                                    )
+                                    .replaceFirst(
+                                      '${_qibla!.distance}',
+                                      _qibla!.distance.toString(),
+                                    ),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),

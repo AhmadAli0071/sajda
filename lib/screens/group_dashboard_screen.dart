@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import '../state/streak_state.dart';
 import '../theme/app_theme.dart';
 import '../utils/streak_invite_text.dart';
+import '../widgets/streak/group_prayer_circle.dart';
 import '../widgets/streak/streak_components.dart';
 import 'group_history_screen.dart';
 import 'group_settings_screen.dart';
@@ -206,6 +207,22 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
           compact: true,
           caption:
               '${app.t('day streak', 'دن کا سلسلہ')} · ${g.memberCount} ${app.t('members', 'ارکان')}',
+        ),
+        if (d.shielded || d.shieldAvailable) ...[
+          const SizedBox(height: 10),
+          _ShieldChip(savedToday: d.shielded, available: d.shieldAvailable),
+        ],
+        const SizedBox(height: 16),
+
+        // Group Prayer Circle — avatars around today's progress hub.
+        GroupPrayerCircle(
+          members: d.members,
+          completed: d.completed,
+          needed: d.needed,
+          dayComplete: d.isGroupDayComplete,
+          shielded: d.shielded,
+          shieldAvailable: d.shieldAvailable,
+          onMemberTap: (m) => _showMemberSheet(app, isDark, m),
         ),
         const SizedBox(height: 16),
 
@@ -419,6 +436,53 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
+
+  // ── Group Prayer Circle: member sheet with prayer status + nudge ──
+
+  void _showMemberSheet(AppState app, bool isDark, MemberProgress m) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _MemberSheetBody(
+        member: m,
+        onNudge: () => _nudge(app, m),
+        onOpenDetail: () {
+          Navigator.of(ctx).pop();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => MemberDetailScreen(groupId: widget.groupId, member: m),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _nudge(AppState app, MemberProgress m) async {
+    try {
+      await StreakV2Api.instance.nudgeMember(widget.groupId, m.userId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(app.t('Reminder sent', 'یاد دہانی بھیج دی گئی')),
+      ));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final msg = e.code == 'NUDGE_DUPLICATE'
+          ? app.t('Already nudged — try another prayer or tomorrow', 'پہلے ہی یاد دہانی بھیجی — کل دوبارہ کوشش کریں')
+          : e.code == 'NUDGE_LIMIT'
+              ? app.t('They got enough reminders for today', 'آج کے لیے کافی یاد دہانیاں بھیج چکیں')
+              : e.isNetworkError
+                  ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
+                  : e.message;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
 }
 
 class _JustCreatedBanner extends StatelessWidget {
@@ -557,6 +621,192 @@ class _InviteCodeCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Shield chip — weekly group shield indicator
+// ─────────────────────────────────────────────────────────────────────
+
+class _ShieldChip extends StatelessWidget {
+  final bool savedToday;
+  final bool available;
+
+  const _ShieldChip({required this.savedToday, required this.available});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final label = savedToday
+        ? app.t('Shield used — streak saved', 'شیلڈ استعمال — سلسلہ بچ گیا')
+        : app.t('Shield ready this week', 'اس ہفتے شیلڈ تیار');
+    return Row(
+      children: [
+        Icon(
+          Icons.shield_rounded,
+          size: 16,
+          color: savedToday ? AppColors.primary : AppColors.primary.withValues(alpha: 0.6),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primaryDeep,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Member sheet — prayer status + nudge (Group Prayer Circle tap target)
+// ─────────────────────────────────────────────────────────────────────
+
+class _MemberSheetBody extends StatelessWidget {
+  final MemberProgress member;
+  final VoidCallback onNudge;
+  final VoidCallback onOpenDetail;
+
+  const _MemberSheetBody({
+    required this.member,
+    required this.onNudge,
+    required this.onOpenDetail,
+  });
+
+  static const _prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final you = app.t('You', 'آپ');
+    final name = member.isMe ? '$you · ${member.displayName}' : member.displayName;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              name,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: isDark ? AppColors.darkText : AppColors.lightText,
+              ),
+            ),
+            if (member.excludedInactive) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  app.t('Inactive — not blocking the group', 'غیر فعال — گروپ نہیں روک رہا'),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryDeep,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            // Prayer status rows
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBackground,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                children: _prayers.map((p) {
+                  final done = member.prayerDone(p);
+                  final label = switch (p) {
+                    'fajr' => app.t('Fajr', 'فجر'),
+                    'dhuhr' => app.t('Dhuhr', 'ظہر'),
+                    'asr' => app.t('Asr', 'عصر'),
+                    'maghrib' => app.t('Maghrib', 'مغرب'),
+                    _ => app.t('Isha', 'عشاء'),
+                  };
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? AppColors.darkText : AppColors.lightText,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          done ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                          size: 20,
+                          color: done ? AppColors.success : AppColors.lightMutedText,
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onOpenDetail,
+                    icon: const Icon(Icons.person_outline_rounded, size: 18),
+                    label: Text(app.t('View profile', 'پروفائل دیکھیں')),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isDark ? AppColors.darkText : AppColors.lightText,
+                      side: BorderSide(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                if (!member.isMe && !member.isDayComplete) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: onNudge,
+                      icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                      label: Text(app.t('Nudge', 'یاد دہانی')),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

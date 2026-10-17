@@ -140,3 +140,102 @@ export const relativeTime = (date, now = new Date()) => {
   if (d < 7) return `${d}d ago`;
   return date.toISOString().slice(0, 10);
 };
+
+// ─────────────────────────────────────────────────────────────────────────
+// GRACE PERIOD (Fix 1) — a prayer day stays open until Fajr of the next
+// calendar day (fallback 4:00 AM local when the exact Fajr minute is not
+// known server-side). Between midnight and Fajr:
+//  - streak derivation anchors on YESTERDAY (the day is still in progress)
+//  - a new tick is attributed to YESTERDAY's log when yesterday is
+//    incomplete (so a late Isha at 00:30 finishes the previous day)
+//  - when yesterday is already complete, the tick starts the new day.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const GRACE_FALLBACK_MINUTES = 4 * 60; // 4:00 AM local
+
+/// Minutes since local midnight of `now` in `timezone` (IANA id).
+export const localMinutesInTz = (timezone, now = new Date()) => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone || 'Asia/Karachi',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(now);
+    const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+    const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+    return hour * 60 + minute;
+  } catch (_) {
+    return now.getUTCHours() * 60 + now.getUTCMinutes();
+  }
+};
+
+/// Whether the clock is inside the grace window (midnight → Fajr).
+export const inGraceWindow = (timezone, now = new Date(), fajrMinutes = GRACE_FALLBACK_MINUTES) =>
+  localMinutesInTz(timezone, now) < fajrMinutes;
+
+/// The active prayer day for STREAK DERIVATION and history: during the
+/// grace window the previous calendar day is still "in progress".
+export const activePrayerDayKey = (timezone, now = new Date(), fajrMinutes = GRACE_FALLBACK_MINUTES) => {
+  const today = todayKeyInTz(timezone, now);
+  return inGraceWindow(timezone, now, fajrMinutes) ? previousDateKey(today) : today;
+};
+
+/// The dateKey a TICK is written to. Same as the active prayer day, except
+/// during grace when YESTERDAY is incomplete — then the tick finishes
+/// yesterday. When yesterday is already complete the tick opens today.
+export const tickTargetDayKey = (
+  timezone,
+  now,
+  yesterdayIncomplete,
+  fajrMinutes = GRACE_FALLBACK_MINUTES,
+) => {
+  const active = activePrayerDayKey(timezone, now, fajrMinutes);
+  const today = todayKeyInTz(timezone, now);
+  if (active === today) return today;
+  return yesterdayIncomplete ? active : today;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// GHOST-MEMBER EXCLUSION (Fix 2a) — a member with ZERO completed prayers
+// for GHOST_WINDOW_DAYS consecutive days no longer blocks the group day.
+// Any tick brings them back into the requirement immediately.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const GHOST_WINDOW_DAYS = 3;
+
+/// `recentCounts`: completedCount values for the last GHOST_WINDOW_DAYS
+/// calendar days (missing days count as 0). `eligibleDays`: how many of
+/// those days the member was actually eligible on (new joiners who were
+/// never required cannot be ghosts).
+export const isGhostExcluded = (recentCounts, eligibleDays = GHOST_WINDOW_DAYS) => {
+  if (eligibleDays < GHOST_WINDOW_DAYS) return false; // not yet subject to the rule
+  return (recentCounts || []).every((c) => (Number(c) || 0) === 0);
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// WEEKLY GROUP SHIELD (Fix 2b) — one automatic save per week: when a day
+// ENDS (grace expired) with ≥80% of the required members at 5/5, the day
+// is marked complete and the streak continues. 1 shield per week (Mon-Sun).
+// ─────────────────────────────────────────────────────────────────────────
+
+export const SHIELD_MIN_RATIO = 0.8;
+
+/// Monday-start week key ('YYYY-MM-DD' of that week's Monday) for a dateKey.
+const pad2 = (n) => String(n).padStart(2, '0');
+export const weekKeyOf = (dateKey) => {
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const mondayOffset = (dt.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  dt.setUTCDate(dt.getUTCDate() - mondayOffset);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+};
+
+/// A missed (ended) day qualifies for the shield when at least
+/// SHIELD_MIN_RATIO of the required members finished 5/5 — but not ALL of
+/// them (all-complete days are regular group days, never shields).
+export const shieldQualifies = (requiredCount, completeCount) => {
+  if (!requiredCount || requiredCount <= 0) return false;
+  if (completeCount >= requiredCount) return false; // fully complete — not a shield case
+  return completeCount / requiredCount >= SHIELD_MIN_RATIO;
+};

@@ -39,6 +39,10 @@ class _LocationSetupScreenState extends State<LocationSetupScreen> {
     final state = context.read<AppState>();
     final name = _gpsName ?? '$_gpsLat, $_gpsLng';
     final nearest = nearestCity(_gpsLat!, _gpsLng!);
+    // Resolve the IANA zone from coordinates (timezone_finder → device
+    // timezone). nearestCity() has no distance cap, so its timezone field
+    // can be wrong for GPS users far from any listed city.
+    final timezone = await state.resolveTimezonePublic(_gpsLat!, _gpsLng!);
     final loc = LocationModel(
       id: 'gps_${_gpsLat!.toStringAsFixed(4)}_${_gpsLng!.toStringAsFixed(4)}',
       city: nearest?.name ?? name.split(',').first.trim(),
@@ -47,7 +51,7 @@ class _LocationSetupScreenState extends State<LocationSetupScreen> {
       countryCode: '',
       latitude: _gpsLat!,
       longitude: _gpsLng!,
-      timezone: nearest?.timezone ?? 'Asia/Karachi',
+      timezone: timezone,
       source: 'GPS',
       isManual: false,
     );

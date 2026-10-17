@@ -36,13 +36,15 @@ class _StreakHomeScreenState extends State<StreakHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
+    // Only the auth flag gates the child — don't rebuild on every
+    // unrelated AppState tick.
+    final authenticated = context.select<AppState, bool>((s) => s.isAuthenticated);
     final streak = context.watch<StreakState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // Gate shows the one-tap Google sign-in when there is no session OR
     // the backend rejected our token (authFailed) — never a dead UI that
     // errors "Authentication required" on every tap.
-    final signedIn = app.isAuthenticated && !streak.authFailed;
+    final signedIn = authenticated && !streak.authFailed;
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
       body: SafeArea(
@@ -189,9 +191,13 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
                 icon: _loading
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
                     : const Icon(Icons.g_mobiledata_rounded, size: 30),
-                label: Text(
-                  state.t('Continue with Google', 'گوگل سے جاری رکھیں'),
-                  style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
+                label: Flexible(
+                  child: Text(
+                    state.t('Continue with Google', 'گوگل سے جاری رکھیں'),
+                    style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ),

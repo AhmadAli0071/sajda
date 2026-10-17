@@ -27,7 +27,21 @@ class QiblaCompass extends StatefulWidget {
 class _QiblaCompassState extends State<QiblaCompass> {
   double? _heading;
   bool _hasStream = false;
+  /// False once we're confident the device has no magnetometer.
+  /// Starts true so low-end devices don't flash the "no sensor" panel
+  /// before the first compass event arrives.
+  bool _sensorAvailable = true;
   StreamSubscription<CompassEvent>? _sub;
+
+  // Magnetometers fire at 50-100 Hz; rebuilding the dial (3 transforms,
+  // gradients, shadows) at that rate tanks low-end devices to <20 FPS.
+  // We coalesce raw events and only setState at ~20 FPS, plus a 1.5°
+  // dead-zone so micro-jitter never triggers a rebuild at all.
+  static const Duration _throttleInterval = Duration(milliseconds: 50);
+  static const double _deadZoneDeg = 1.5;
+  DateTime _lastEmit = DateTime.fromMillisecondsSinceEpoch(0);
+  CompassEvent? _pending;
+  bool _flushScheduled = false;
 
   @override
   void initState() {
@@ -35,27 +49,93 @@ class _QiblaCompassState extends State<QiblaCompass> {
     _init();
   }
 
+  void _onSensorEvent(CompassEvent event) {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final elapsed = now.difference(_lastEmit);
+    if (elapsed >= _throttleInterval) {
+      _lastEmit = now;
+      _applyHeading(event);
+    } else {
+      // Hold the latest event; a zero-delay timer flushes it once the
+      // throttle window opens so we never lag behind the sensor.
+      _pending = event;
+      if (!_flushScheduled) {
+        _flushScheduled = true;
+        Future.delayed(_throttleInterval - elapsed, () {
+          _flushScheduled = false;
+          final pending = _pending;
+          _pending = null;
+          if (!mounted || pending == null) return;
+          if (DateTime.now().difference(_lastEmit) >= _throttleInterval) {
+            _lastEmit = DateTime.now();
+            _applyHeading(pending);
+          }
+        });
+      }
+    }
+  }
+
+  void _applyHeading(CompassEvent event) {
+    final next = event.heading;
+    final prev = _heading;
+    // Dead-zone: skip setState when the heading barely moved (noise).
+    if (prev != null &&
+        next != null &&
+        (next - prev).abs() < _deadZoneDeg) {
+      if (!_hasStream || !_sensorAvailable) {
+        setState(() {
+          _hasStream = true;
+          _sensorAvailable = true;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _heading = next;
+      _hasStream = true;
+      _sensorAvailable = true;
+    });
+  }
+
   Future<void> _init() async {
     final stream = FlutterCompass.events;
     if (stream == null) {
-      if (mounted) setState(() => _hasStream = false);
+      if (mounted) {
+        setState(() {
+          _hasStream = false;
+          _sensorAvailable = false;
+        });
+      }
       return;
     }
     _sub = stream.listen(
-      (event) {
-        if (!mounted) return;
-        setState(() {
-          _heading = event.heading;
-          _hasStream = true;
-        });
-      },
+      _onSensorEvent,
       onError: (_) {
-        if (mounted) setState(() => _hasStream = false);
+        if (mounted) {
+          setState(() {
+            _hasStream = false;
+            _sensorAvailable = false;
+          });
+        }
       },
       onDone: () {
-        if (mounted) setState(() => _hasStream = false);
+        if (mounted) {
+          setState(() {
+            _hasStream = false;
+            _sensorAvailable = false;
+          });
+        }
       },
     );
+    // Some low-end devices expose the stream but never emit an event.
+    // If nothing arrives within 2s, fall back to the static bearing view
+    // with a clear "no sensor" message instead of a silently frozen dial.
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && !_hasStream) {
+        setState(() => _sensorAvailable = false);
+      }
+    });
   }
 
   @override
@@ -71,15 +151,70 @@ class _QiblaCompassState extends State<QiblaCompass> {
     final heading = _heading;
     final dialAngle = (heading == null ? 0.0 : -heading) * math.pi / 180;
     final arrowAngle = (heading == null ? _bearing : _bearing - heading) * math.pi / 180;
+    final isUrdu = widget.isUrdu;
 
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+        if (!_sensorAvailable) ...[
+          // Clear "no magnetometer" message instead of a silently frozen dial.
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.compass_calibration_outlined, color: Colors.orange, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _noSensorTitle(isUrdu),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _noSensorBody(isUrdu),
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else if (heading != null) ...[
+          // Calibration tip for low-end / uncalibrated magnetometers.
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Text(
+              _calibrationTip(isUrdu),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.primary),
+            ),
+          ),
+        ],
         SizedBox(
           width: widget.size,
           height: widget.size,
-          child: Stack(
+          // Isolate the compass graphic into its own paint layer so the
+          // ~20 FPS dial rotation never repaints the texts/cards around it.
+          child: RepaintBoundary(
+            child: Stack(
             alignment: Alignment.center,
             children: [
               // ---- rotating dial ----
@@ -87,7 +222,7 @@ class _QiblaCompassState extends State<QiblaCompass> {
                 angle: dialAngle,
                 child: CustomPaint(
                   size: Size.square(widget.size),
-                  painter: _DialPainter(radius: widget.size / 2),
+                  painter: _DialPainter(radius: widget.size / 2, isUrdu: isUrdu),
                 ),
               ),
               // ---- qibla arrow ----
@@ -173,6 +308,7 @@ class _QiblaCompassState extends State<QiblaCompass> {
                 ),
               ),
             ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -228,22 +364,45 @@ class _QiblaCompassState extends State<QiblaCompass> {
 
   String _headingLabel(BuildContext context) => widget.isUrdu ? 'شمال' : 'Heading';
   String _kaabaLabel(BuildContext context) => widget.isUrdu ? 'کعبہ کا فاصلہ' : 'Distance to Kaaba';
+
+  String _noSensorTitle(bool isUrdu) => isUrdu
+      ? 'آپ کے فون میں قطب نما سینسر (Magnetometer) نہیں ہے'
+      : "No compass sensor (Magnetometer) on this device";
+
+  String _noSensorBody(bool isUrdu) => isUrdu
+      ? '${widget.qibla.degree}° پر ثابت رخ استعمال کریں — نیچے دیا گیا ڈگری پہ کعبہ کی طرف منہ کریں۔'
+      : 'Use the fixed bearing below — face ${widget.qibla.degree}° to face the Kaaba.';
+
+  String _calibrationTip(bool isUrdu) => isUrdu
+      ? 'نکٹی کے لیے فون کو 8 کی شکل میں گھمائیں تاکہ قطب نما درست ہو'
+      : 'Tip: Move your phone in a figure-8 to calibrate the compass';
 }
 
 class _DialPainter extends CustomPainter {
   final double radius;
-  _DialPainter({required this.radius});
+  final bool isUrdu;
+  _DialPainter({required this.radius, this.isUrdu = false});
+
+  // Creating a LinearGradient + shader every paint() call at sensor rate
+  // causes GPU allocation churn on low-end devices. Build it once per
+  // (radius) and reuse across paints.
+  static final Map<double, Shader> _shaderCache = {};
+
+  Shader _ringShader(Offset center) {
+    return _shaderCache.putIfAbsent(radius, () {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF0B4A3C), Color(0xFF07281F)],
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    });
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
 
-    final ring = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF0B4A3C), Color(0xFF07281F)],
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    final ring = Paint()..shader = _ringShader(center);
     canvas.drawCircle(center, radius, ring);
 
     final border = Paint()
@@ -278,12 +437,10 @@ class _DialPainter extends CustomPainter {
       color: Colors.white.withValues(alpha: 0.92),
     );
     final offset = radius - 34;
-    final labels = {
-      0.0: 'N',
-      90.0: 'E',
-      180.0: 'S',
-      270.0: 'W',
-    };
+    // Localized compass points (Urdu/Arabic/Persian use native letters).
+    final labels = isUrdu
+        ? <double, String>{0.0: 'ش', 90.0: 'م', 180.0: 'ج', 270.0: 'غ'}
+        : <double, String>{0.0: 'N', 90.0: 'E', 180.0: 'S', 270.0: 'W'};
     labels.forEach((deg, label) {
       final a = deg * math.pi / 180;
       final pos = center + Offset(math.sin(a) * offset, -math.cos(a) * offset);
@@ -296,5 +453,6 @@ class _DialPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _DialPainter oldDelegate) => oldDelegate.radius != radius;
+  bool shouldRepaint(covariant _DialPainter oldDelegate) =>
+      oldDelegate.radius != radius || oldDelegate.isUrdu != isUrdu;
 }

@@ -10,6 +10,8 @@ const groupDailySummarySchema = new mongoose.Schema({
   eligibleCount: { type: Number, default: 0, min: 0 },
   completedCount: { type: Number, default: 0, min: 0 },
   isGroupDayComplete: { type: Boolean, default: false },
+  // Weekly group shield (Fix 2b): a missed-but-≥80% day is auto-completed.
+  shielded: { type: Boolean, default: false },
   completedAt: { type: Date },
 }, { timestamps: true });
 

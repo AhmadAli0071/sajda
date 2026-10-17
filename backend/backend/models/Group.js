@@ -20,6 +20,9 @@ const groupSchema = new mongoose.Schema({
   currentStreakStartDate: { type: String },
   lastCompletedDay: { type: String },
   lastEvaluatedDay: { type: String },
+  // Weekly group shield: Monday-start weekKey ('YYYY-MM-DD') the shield was
+  // last consumed on. One shield per week — compare with weekKeyOf(dateKey).
+  shieldUsedWeekKey: { type: String },
   archivedAt: { type: Date },
 }, { timestamps: true });
 

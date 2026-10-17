@@ -11,6 +11,7 @@ const groupActivitySchema = new mongoose.Schema({
     enum: [
       'group_created', 'prayer_completed', 'member_joined', 'member_left',
       'member_removed', 'group_day_completed', 'ownership_transferred', 'group_archived',
+      'group_shield_used',
     ],
     required: true,
   },

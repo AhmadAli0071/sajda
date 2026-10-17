@@ -197,6 +197,8 @@ class GroupSummary {
   final int requiredToday;
   final int completedToday;
   final bool groupDayComplete;
+  final bool shielded; // group day completed by the weekly shield
+  final bool shieldAvailable; // shield not yet used this week
   final bool isOwner;
 
   const GroupSummary({
@@ -216,6 +218,8 @@ class GroupSummary {
     this.requiredToday = 0,
     this.completedToday = 0,
     this.groupDayComplete = false,
+    this.shielded = false,
+    this.shieldAvailable = false,
     this.isOwner = false,
   }) : isRequiredToday = isRequiredToday ?? eligible;
 
@@ -240,6 +244,8 @@ class GroupSummary {
       requiredToday: _i(json['today']?['required']),
       completedToday: _i(json['today']?['completed']),
       groupDayComplete: _b(json['today']?['isGroupDayComplete']),
+      shielded: _b(json['today']?['shielded']),
+      shieldAvailable: _b(json['shieldAvailable']),
       isOwner: _b(json['isOwner']),
     );
   }
@@ -251,9 +257,15 @@ class MemberProgress {
   final String role;
   final bool eligible;
   final bool isRequiredToday; // false = brand-new joiner (counts, blocks from tomorrow)
+  final bool excludedInactive; // true = 3-day ghost, not blocking the group day
   final int completedCount;
   final bool isDayComplete;
   final bool isMe;
+  final bool fajr;
+  final bool dhuhr;
+  final bool asr;
+  final bool maghrib;
+  final bool isha;
 
   const MemberProgress({
     required this.userId,
@@ -261,10 +273,25 @@ class MemberProgress {
     this.role = 'member',
     this.eligible = false,
     bool? isRequiredToday,
+    this.excludedInactive = false,
     this.completedCount = 0,
     this.isDayComplete = false,
     this.isMe = false,
+    this.fajr = false,
+    this.dhuhr = false,
+    this.asr = false,
+    this.maghrib = false,
+    this.isha = false,
   }) : isRequiredToday = isRequiredToday ?? eligible;
+
+  bool prayerDone(String prayer) => switch (prayer) {
+        'fajr' => fajr,
+        'dhuhr' => dhuhr,
+        'asr' => asr,
+        'maghrib' => maghrib,
+        'isha' => isha,
+        _ => false,
+      };
 
   factory MemberProgress.fromJson(Map<String, dynamic> json) {
     final eligible = _b(json['eligible']);
@@ -274,9 +301,15 @@ class MemberProgress {
       role: _s(json['role'], 'member'),
       eligible: eligible,
       isRequiredToday: _b(json['required'], eligible),
+      excludedInactive: _b(json['excludedInactive']),
       completedCount: _i(json['completedCount']),
       isDayComplete: _b(json['isDayComplete']),
       isMe: _b(json['isMe']),
+      fajr: _b(json['fajr']),
+      dhuhr: _b(json['dhuhr']),
+      asr: _b(json['asr']),
+      maghrib: _b(json['maghrib']),
+      isha: _b(json['isha']),
     );
   }
 }
@@ -368,6 +401,8 @@ class GroupDashboardData {
   final int needed;
   final int completed;
   final bool isGroupDayComplete;
+  final bool shielded; // today's summary was completed by the weekly shield
+  final bool shieldAvailable; // shield not yet used this week
   final List<ActivityItem> activity;
 
   const GroupDashboardData({
@@ -376,6 +411,8 @@ class GroupDashboardData {
     this.needed = 0,
     this.completed = 0,
     this.isGroupDayComplete = false,
+    this.shielded = false,
+    this.shieldAvailable = false,
     this.activity = const [],
   });
 
@@ -387,6 +424,8 @@ class GroupDashboardData {
         needed: _i(json['today']?['required']),
         completed: _i(json['today']?['completed']),
         isGroupDayComplete: _b(json['today']?['isGroupDayComplete']),
+        shielded: _b(json['today']?['shielded']),
+        shieldAvailable: _b(json['shieldAvailable']),
         activity: (json['activity'] as List? ?? [])
             .map((e) => ActivityItem.fromJson(e as Map<String, dynamic>))
             .toList(),

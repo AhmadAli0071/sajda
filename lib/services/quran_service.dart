@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:quran/quran.dart' as q;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -246,6 +247,20 @@ class QuranService {
     return results;
   }
 
+  /// Full-corpus scan on a background isolate — same results as [search]
+  /// but never blocks the UI thread (6,236 verses of toLowerCase+contains
+  /// froze low-end devices for 100-500ms per query).
+  Future<List<SearchResult>> searchAsync(String query) async {
+    final raw = await compute(_searchIsolate, query.trim());
+    return raw
+        .map((m) => SearchResult(
+              surah: m['s'] as int,
+              ayah: m['v'] as int,
+              arabic: m['a'] as String,
+            ))
+        .toList(growable: false);
+  }
+
   // ---------- Bookmarks ----------
 
   Future<Set<String>> getBookmarks() async {
@@ -270,5 +285,32 @@ class QuranService {
 
   String surahNameWithNumber(int surah) =>
       '$surah. ${q.getSurahNameEnglish(surah)}';
+}
+
+/// Top-level isolate entry point for [QuranService.searchAsync].
+/// `compute()` requires a top-level/static function; the scan itself is a
+/// pure-Dart walk over the embedded Tanzil text (safe off the main isolate).
+List<Map<String, dynamic>> _searchIsolate(String qry) {
+  if (qry.isEmpty) return const [];
+  final lower = qry.toLowerCase();
+  final results = <Map<String, dynamic>>[];
+  for (var s = 1; s <= 114 && results.length < 200; s++) {
+    final count = q.getVerseCount(s);
+    for (var v = 1; v <= count; v++) {
+      final txt = q.getVerse(s, v);
+      if (txt.toLowerCase().contains(lower)) {
+        // Strip the Bismillah prefix from verse 1 (same rule as
+        // QuranService._verseText) so displayed text stays consistent.
+        var arabic = txt;
+        if (v == 1 && s != 1 && s != 9 && txt.startsWith(QuranService.bismillahText)) {
+          final rest = txt.substring(QuranService.bismillahText.length).trim();
+          if (rest.isNotEmpty) arabic = rest;
+        }
+        results.add({'s': s, 'v': v, 'a': arabic});
+        if (results.length >= 200) break;
+      }
+    }
+  }
+  return results;
 }
 

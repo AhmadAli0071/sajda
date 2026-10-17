@@ -76,6 +76,107 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _generate();
   }
 
+  /// Moon-sighting adjustment (-2..+2 days). Formerly on the Settings
+  /// screen; lives here next to the calendar it affects.
+  void _showAdjustSheet(AppState state) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final selected = state.hijriAdjust;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  state.t('Hijri date adjustment', 'ہجری تاریخ ایڈجسٹمنٹ'),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  state.t(
+                    'Match your local moon sighting (mosque calendar).',
+                    'اپنے مقامی چاند (مسجد کے کیلنڈر) کے مطابق کریں۔',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  state.isUrdu ? state.todayHijriDate.fullAr : state.todayHijriDate.full,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [-2, -1, 0, 1, 2].map((v) {
+                    final label = v > 0 ? '+$v' : '$v';
+                    final isSelected = selected == v;
+                    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                    final accent = AppColors.accent(isDark);
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: InkWell(
+                          onTap: () async {
+                            await state.setHijriAdjust(v);
+                            setSheetState(() {});
+                            // Rebuild the grid so the new offset applies
+                            // to the Gregorian dates under each Hijri day.
+                            await _generate();
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? accent.withValues(alpha: 0.1)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? accent
+                                    : (isDark
+                                        ? AppColors.darkSurfaceAlt
+                                        : AppColors.lightBorder),
+                                width: isSelected ? 1.4 : 1,
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight:
+                                    isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected
+                                    ? accent
+                                    : Theme.of(ctx).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   List<HijriDay> _generateHijriMonth(int hijriYear, int hijriMonth) {
     final days = <HijriDay>[];
     final calendar = HijriCalendar();
@@ -137,6 +238,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
             color: AppColors.textMain(isDark),
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: state.t('Hijri date adjustment', 'ہجری تاریخ ایڈجسٹمنٹ'),
+            onPressed: () => _showAdjustSheet(state),
+            icon: Icon(
+              Icons.edit_calendar_rounded,
+              color: AppColors.textMain(isDark),
+            ),
+          ),
+        ],
       ),
       body: GlassBackground(
         child: RefreshIndicator(

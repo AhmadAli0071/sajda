@@ -22,6 +22,7 @@ import 'screens/group_preview_screen.dart';
 import 'state/app_state.dart';
 import 'state/audio_player_state.dart';
 import 'state/streak_state.dart';
+import 'services/version_check_service.dart';
 import 'theme/app_theme.dart';
 import 'config.dart';
 import 'widgets/splash_screen.dart';
@@ -72,20 +73,24 @@ class SajdaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    // context.select isolates MaterialApp to ONLY the fields it consumes.
+    // The old blanket watch<AppState>() rebuilt the entire app tree
+    // (every mounted screen, dialogs, routes) on every AppState tick —
+    // quran position saves, streak refreshes, audio state, etc.
+    final loaded = context.select<AppState, bool>((s) => s.loaded);
+    final themeMode = context.select<AppState, ThemeMode>((s) => s.themeMode);
+    final lang = context.select<AppState, String>((s) => s.language);
+    final isUrdu = lang == 'ur';
 
-    if (!state.loaded) {
+    if (!loaded) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
-        themeMode: state.themeMode,
+        themeMode: themeMode,
         home: const Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
-
-    final isUrdu = state.isUrdu;
-    final lang = state.language;
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -94,7 +99,7 @@ class SajdaApp extends StatelessWidget {
       navigatorKey: NotificationRouter.navigatorKey,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      themeMode: state.themeMode,
+      themeMode: themeMode,
       locale: lang == 'en' ? const Locale('en') : Locale(lang),
       supportedLocales:
           AppStrings.supportedLanguages.map((l) => Locale(l.code)).toList(),
@@ -271,20 +276,35 @@ class _RootState extends State<_Root> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    if (!state.loaded) {
+    // Select only the boot-phase flags; a blanket watch here would
+    // rebuild the shell on every unrelated AppState tick.
+    final loaded = context.select<AppState, bool>((s) => s.loaded);
+    final onboardingDone = context.select<AppState, bool>((s) => s.onboardingDone);
+    final locationConfigured =
+        context.select<AppState, bool>((s) => s.locationConfigured);
+    if (!loaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_showSplash) {
       return PopScope(
         canPop: false,
-        child: SplashScreen(onDone: () => setState(() => _showSplash = false)),
+        child: SplashScreen(onDone: () {
+          setState(() => _showSplash = false);
+          // Force-update gate: runs once per app start, right after the
+          // splash — if the installed version is below the backend's
+          // minimum, a non-dismissible dialog blocks the rest of the app.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              unawaited(VersionCheckService.instance.checkOnLaunch(context));
+            }
+          });
+        }),
       );
     }
-    if (!state.onboardingDone) {
+    if (!onboardingDone) {
       return const PopScope(canPop: false, child: OnboardingScreen());
     }
-    if (!state.locationConfigured) {
+    if (!locationConfigured) {
       return const PopScope(canPop: false, child: LocationSetupScreen());
     }
     return const PopScope(canPop: true, child: MainShell());

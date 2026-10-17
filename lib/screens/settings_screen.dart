@@ -73,6 +73,140 @@ class SettingsScreen extends StatelessWidget {
     } catch (_) {}
   }
 
+  /// AlAdhan calculation method options offered in settings.
+  /// (id matches AlAdhan's `method` query parameter.)
+  static const _calculationMethods = <(int, String, String)>[
+    (1, 'University of Islamic Sciences, Karachi', 'جامعہ علوم اسلامی، کراچی'),
+    (2, 'ISNA (North America)', 'ISNA (امریکہ و کینیڈا)'),
+    (3, 'Muslim World League', 'مسلم ورلڈ لیگ'),
+    (4, 'Umm Al-Qura, Makkah', 'ام القری، مکہ'),
+    (5, 'Egyptian General Authority', 'مصری ادارۂ اوقاف'),
+    (8, 'Gulf Region', 'خلیجی علاقہ'),
+    (13, 'Moonsighting Committee', 'چاند دیکھنے کمیٹی'),
+    (15, 'Turkey (Diyanet)', 'تركی (دیانت)'),
+  ];
+
+  /// Refetch times + reschedule azan after the calculation inputs changed.
+  Future<void> _onPrayerCalcChanged(BuildContext context) async {
+    final state = context.read<AppState>();
+    ApiClient.instance.invalidatePrayerTimesCache();
+    if (!state.notificationsEnabled) return;
+    try {
+      final times = await ApiClient.instance.getPrayerTimesFor(state, useCache: false);
+      await PrayerNotificationService.instance.scheduleAll(
+        times.prayers,
+        isUrdu: state.isUrdu,
+        timezone: state.locationTimezone,
+        prayerModes: state.prayerNotificationModes,
+        city: state.displayCityName,
+      );
+    } catch (_) {}
+  }
+
+  void _showCalculationMethodPicker(BuildContext context, AppState state) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              state.t('Calculation Method', 'حساب کا طریقہ'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              state.t('Used for Fajr & Isha angles', 'فجر اور عشا کے زاویوں کے لیے'),
+              style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: _calculationMethods.map((m) {
+                  final (id, en, ur) = m;
+                  final isSelected = state.prayerMethod == id;
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(
+                      isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
+                      color: isSelected ? AppColors.primary : null,
+                    ),
+                    title: Text(
+                      state.t(en, ur),
+                      style: TextStyle(
+                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                        color: isSelected ? AppColors.primary : null,
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await state.setPrayerMethod(id);
+                      if (context.mounted) await _onPrayerCalcChanged(context);
+                      if (context.mounted) {
+                        showAppSnack(context, state.t('Prayer times updated', 'نماز کے اوقات اپ ڈیٹ ہو گئے'));
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAsrSchoolPicker(BuildContext context, AppState state) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              state.t('Asr Method', 'عصر کا مذاہب'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            for (final (value, en, ur) in const <(int, String, String)>[
+              (0, 'Standard (Shafi, Maliki, Hanbali)', 'معیاری (شافعی، مالکی، حنبلی)'),
+              (1, 'Hanafi', 'حنفی'),
+            ])
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  state.asrSchool == value
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_off_rounded,
+                  color: state.asrSchool == value ? AppColors.primary : null,
+                ),
+                title: Text(
+                  state.t(en, ur),
+                  style: TextStyle(
+                    fontWeight: state.asrSchool == value ? FontWeight.w800 : FontWeight.w500,
+                    color: state.asrSchool == value ? AppColors.primary : null,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await state.setAsrSchool(value);
+                  if (context.mounted) await _onPrayerCalcChanged(context);
+                  if (context.mounted) {
+                    showAppSnack(context, state.t('Prayer times updated', 'نماز کے اوقات اپ ڈیٹ ہو گئے'));
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showLanguagePicker(BuildContext context, AppState state) {
     final currentLang = state.language;
     showModalBottomSheet(
@@ -201,6 +335,61 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 20),
+          _SectionHeader(icon: Icons.access_time_rounded, title: state.t('Prayer Times Calculation', 'نماز کے اوقات کا حساب')),
+          const SizedBox(height: 10),
+          _SettingsCard(
+            child: Column(children: [
+              _NavigationTile(
+                icon: Icons.calculate_outlined,
+                title: state.t('Calculation Method', 'حساب کا طریقہ'),
+                subtitle: state.t(
+                  _calculationMethods
+                      .firstWhere((m) => m.$1 == state.prayerMethod, orElse: () => _calculationMethods[2])
+                      .$2,
+                  _calculationMethods
+                      .firstWhere((m) => m.$1 == state.prayerMethod, orElse: () => _calculationMethods[2])
+                      .$3,
+                ),
+                onTap: () => _showCalculationMethodPicker(context, state),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              _NavigationTile(
+                icon: Icons.wb_twilight_rounded,
+                title: state.t('Asr Method', 'عصر کا مذاہب'),
+                subtitle: state.asrSchool == 1
+                    ? state.t('Hanafi', 'حنفی')
+                    : state.t('Standard (Shafi, Maliki, Hanbali)', 'معیاری (شافعی، مالکی، حنبلی)'),
+                onTap: () => _showAsrSchoolPicker(context, state),
+              ),
+              if (state.prayerMethodManual) ...[
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                _NavigationTile(
+                  icon: Icons.settings_backup_restore_rounded,
+                  title: state.t('Reset to Auto (by country)', 'خودکار (ملک کے مطابق)'),
+                  subtitle: state.t('Follow mosque calendars in your region', 'اپنے علاقے کے مسجد کیلنڈرز کی پیروی کریں'),
+                  onTap: () async {
+                    await state.resetPrayerCalculationToAuto();
+                    if (context.mounted) await _onPrayerCalcChanged(context);
+                    if (context.mounted) {
+                      showAppSnack(context, state.t('Reset to country default', 'ملک کی ڈیفالٹ پر واپس'));
+                    }
+                  },
+                ),
+              ] else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                  child: Text(
+                    state.t(
+                      'Auto-selected from your country. Tap to set manually.',
+                      'آپ کے ملک کے مطابق خودکار منتخب ہے۔ دستی طور پر منتخب کرنے کے لیے ٹیپ کریں۔',
+                    ),
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+            ]),
+          ),
+
+          const SizedBox(height: 20),
           _SectionHeader(icon: isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, title: state.t('Appearance', 'ظاہری')),
           const SizedBox(height: 10),
           _SettingsCard(
@@ -233,47 +422,6 @@ class SettingsScreen extends StatelessWidget {
                       selected: state.themeMode == ThemeMode.system,
                       onTap: () => state.setThemeMode(ThemeMode.system),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          _SectionHeader(icon: Icons.calendar_month_rounded, title: state.t('Islamic Calendar', 'اسلامی کیلنڈر')),
-          const SizedBox(height: 10),
-          _SettingsCard(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    state.t('Hijri date adjustment', 'ہجری تاریخ ایڈجسٹمنٹ'),
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: theme.colorScheme.onSurface),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    state.t('Match your local moon sighting (mosque calendar).', 'اپنے مقامی چاند (مسجد کے کیلنڈر) کے مطابق کریں۔'),
-                    style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    state.isUrdu ? state.todayHijriDate.fullAr : state.todayHijriDate.full,
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.primary),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [-2, -1, 0, 1, 2].map((v) {
-                      final label = v > 0 ? '+$v' : '$v';
-                      return Expanded(
-                        child: _AdjustChip(
-                          label: label,
-                          selected: state.hijriAdjust == v,
-                          onTap: () => state.setHijriAdjust(v),
-                        ),
-                      );
-                    }).toList(),
                   ),
                 ],
               ),
@@ -501,50 +649,6 @@ class _SwitchTile extends StatelessWidget {
             ),
             Switch(value: value, onChanged: onChanged, activeThumbColor: AppColors.primary),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AdjustChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _AdjustChip({required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = AppColors.accent(isDark);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? accent.withValues(alpha: 0.1) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? accent
-                  : (isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
-              width: selected ? 1.4 : 1,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected ? accent : cs.onSurfaceVariant,
-            ),
-          ),
         ),
       ),
     );

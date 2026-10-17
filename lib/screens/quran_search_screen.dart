@@ -19,10 +19,12 @@ class _QuranSearchScreenState extends State<QuranSearchScreen> {
   bool _searching = false;
 
   Future<void> _search(String query) async {
-    final state = context.read<AppState>();
     setState(() => _searching = true);
-    final results = await Future(() =>
-        QuranService.instance.search(query, urdu: state.isUrdu));
+    // searchAsync runs the 6,236-verse scan on a background isolate so
+    // typing never freezes the UI on low-end devices.
+    final results = await QuranService.instance
+        .searchAsync(query)
+        .catchError((_) => <SearchResult>[]);
     if (!mounted) return;
     setState(() {
       _results = results;

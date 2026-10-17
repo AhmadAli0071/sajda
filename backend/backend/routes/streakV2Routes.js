@@ -27,6 +27,7 @@ import {
   getNotifications,
   markNotificationsSeen,
   registerDevice,
+  nudgeMember,
   repairFindGroups,
   repairMintOwnerToken,
 } from '../controllers/streakV2Controller.js';
@@ -80,8 +81,16 @@ router.get('/notifications', getNotifications);
 router.post('/notifications/seen', W, markNotificationsSeen);
 router.post('/devices', W, registerDevice);
 
+// ── Nudge — also available at POST /api/group/v2/nudge (see nudgeRouter) ──
+router.post('/groups/nudge', W, nudgeMember);
+
 // ── ONE-TIME account recovery (remove after use) ──
 router.get('/admin-repair/groups', repairFindGroups);
 router.post('/admin-repair/mint', repairMintOwnerToken);
+
+// Spec-exact alias: POST /api/group/v2/nudge — mounted separately in
+// server.js so the documented path works alongside /api/streak/v2.
+export const nudgeRouter = Router();
+nudgeRouter.post('/nudge', W, nudgeMember);
 
 export default router;

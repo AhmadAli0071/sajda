@@ -4,13 +4,27 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/static_data.dart';
 import '../../models/streak_v2.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
-import '../../utils/allah_names.dart';
 
 /// Shared, reusable building blocks for every v2 streak screen so the whole
 /// system looks and behaves consistently.
+
+/// Localized-data accessor for streak leaf widgets.
+///
+/// These widgets only consume `AppState.t()` / `isUrdu` (both derived from
+/// `language`). A blanket `context.watch<AppState>()` rebuilt them on EVERY
+/// AppState tick — streak refreshes, quran position saves, auth changes.
+/// This extension subscribes to the language ONLY, so unrelated state
+/// notifications no longer rebuild streak UI.
+extension StreakLocalization on BuildContext {
+  AppState get watchLanguage {
+    select((AppState s) => s.language);
+    return read<AppState>();
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Hero — the big streak number
@@ -32,7 +46,7 @@ class StreakHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final streakLabel = state.t('day streak', 'روز کا سلسلہ');
     final bestLabel = state.t('Best', 'بہترین');
     return Container(
@@ -136,7 +150,7 @@ class TodayProgressHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final today = state.t('Today', 'آج');
     final done = state.t('done', 'مکمل');
     final allDone = state.t('All prayers complete — Alhamdulillah!', 'سب نمازیں مکمل — الحمدللہ!');
@@ -214,7 +228,7 @@ class PrayerTickTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final meta = _labels[prayer] ?? (prayer, prayer, Icons.circle_outlined);
     final label = state.t(meta.$1, meta.$2);
     final dark = state.darkMode;
@@ -297,7 +311,7 @@ class MemberProgressRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final dark = state.darkMode;
     final you = state.t('You', 'آپ');
     final name = member.isMe ? '$you · ${member.displayName}' : member.displayName;
@@ -365,6 +379,25 @@ class MemberProgressRow extends StatelessWidget {
                               fontSize: 9.5,
                               fontWeight: FontWeight.w700,
                               color: AppColors.primaryDeep,
+                            ),
+                          ),
+                        ),
+                      ],
+                      // 3-day ghost: still listed, no longer blocking.
+                      if (member.excludedInactive) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.lightMutedText.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            state.t('inactive', 'غیر فعال'),
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText,
                             ),
                           ),
                         ),
@@ -437,7 +470,7 @@ class ActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final dark = state.darkMode;
     final (icon, color, text) = _describe(state);
     return Padding(
@@ -575,7 +608,7 @@ class StreakSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -612,7 +645,7 @@ class EmptyStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final dark = state.darkMode;
     return Container(
       width: double.infinity,
@@ -662,7 +695,7 @@ class ErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -736,11 +769,14 @@ class _LoadingListState extends State<LoadingList>
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
+    final app = context.watchLanguage;
     final n = allahNames[_index];
-    final meaning = app.isUrdu ? n.ur : n.en;
+    final meaning = app.isUrdu ? n.meaningUr : n.meaning;
 
-    return AnimatedBuilder(
+    // Isolate the 4s breathing/pulse animation into its own paint layer so
+    // it repaints alone instead of dragging the whole loader subtree.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
       animation: _anim,
       builder: (context, _) {
         final t = _anim.value;
@@ -815,7 +851,7 @@ class _LoadingListState extends State<LoadingList>
                               ],
                             ).createShader(b),
                             child: Text(
-                              n.ar,
+                              n.arabic,
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.white,
@@ -848,7 +884,7 @@ class _LoadingListState extends State<LoadingList>
                               ),
                             ),
                             child: Text(
-                              n.tr,
+                              n.en,
                               style: const TextStyle(
                                 color: Color(0xFFF3DFA8),
                                 fontSize: 13,
@@ -915,6 +951,7 @@ class _LoadingListState extends State<LoadingList>
         ),
         );
       },
+    ),
     );
   }
 }
@@ -954,7 +991,7 @@ class GroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final state = context.watchLanguage;
     final dark = state.darkMode;
     final membersLabel = state.t('members', 'ارکان');
     final waiting = state.t('waiting for others', 'دوسروں کا انتظار');

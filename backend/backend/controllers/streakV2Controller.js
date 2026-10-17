@@ -11,7 +11,7 @@ import GroupDailySummary from '../models/GroupDailySummary.js';
 import GroupActivity from '../models/GroupActivity.js';
 import JoinRequest from '../models/JoinRequest.js';
 import PushToken from '../models/PushToken.js';
-import { PRAYERS, todayKeyInTz } from '../services/streakLogic.js';
+import { PRAYERS, todayKeyInTz, previousDateKey } from '../services/streakLogic.js';
 import { pushToUsers } from '../services/fcm.js';
 import { getJwtSecret } from '../middleware/auth.js';
 import {
@@ -27,6 +27,13 @@ import {
   currentRunFromDays,
   longestRunFromDays,
   buildMonthHistory,
+  activePrayerDayKey,
+  tickTargetDayKey,
+  inGraceWindow,
+  isGhostExcluded,
+  weekKeyOf,
+  shieldQualifies,
+  GHOST_WINDOW_DAYS,
 } from '../services/streakV2Logic.js';
 
 const fail = (res, status, code, message) =>
@@ -59,10 +66,13 @@ const prayerOf = (raw) => String(raw || '').trim().toLowerCase();
 // ─────────────────────────────────────────────────────────────────────────
 // STREAK DERIVATION — streaks are computed from daily records, never
 // incremented by a tap. Bounded walk: cost = current streak length.
+// The walk anchors on the ACTIVE PRAYER DAY (grace-aware): between
+// midnight and Fajr the previous day is still in progress, so the streak
+// is never reset during the grace window.
 // ─────────────────────────────────────────────────────────────────────────
 
 const rollForwardSolo = async (solo, userId, timezone) => {
-  const today = todayKeyInTz(timezone);
+  const today = activePrayerDayKey(timezone);
   // Bounded read: the CURRENT run cannot start before the recorded start
   // date, so the walk only needs those rows. bestStreak is monotonic —
   // max(stored, current run) needs no full-history scan. When no start date
@@ -90,8 +100,99 @@ const rollForwardSolo = async (solo, userId, timezone) => {
   return doc;
 };
 
+// Ghost exclusion (Fix 2a): a member with ZERO completed prayers for the
+// last GHOST_WINDOW_DAYS days no longer blocks the group day. Any tick
+// brings them back into the requirement immediately. Returns the
+// non-ghost subset of `members` (each needs userId + effectiveFromDate).
+const ghostFreeMembers = async (groupId, dateKey, members) => {
+  if (!members || members.length === 0) return [];
+  const keys = [dateKey];
+  let k = dateKey;
+  for (let i = 1; i < GHOST_WINDOW_DAYS; i++) {
+    k = previousDateKey(k);
+    keys.push(k);
+  }
+  const rows = await GroupDailyProgress.find({ groupId, dateKey: { $in: keys } })
+    .select('userId dateKey completedCount').lean();
+  const countBy = new Map(); // `${userId}:${dateKey}` -> completedCount
+  for (const r of rows) countBy.set(`${r.userId}:${r.dateKey}`, r.completedCount || 0);
+  return members.filter((m) => {
+    const uid = String(m.userId);
+    const counts = keys.map((key) => countBy.get(`${uid}:${key}`) || 0);
+    // Only members who were eligible for the WHOLE window can be ghosts —
+    // a brand-new joiner with no rows is not a ghost.
+    let eligibleDays = 0;
+    for (const key of keys) if (String(m.effectiveFromDate || '') <= key) eligibleDays++;
+    return !isGhostExcluded(counts, eligibleDays);
+  });
+};
+
+// Weekly group shield (Fix 2b): called for the day that just ENDED (grace
+// expired). If ≥80% of the required (ghost-free) members finished 5/5 but
+// some did not, the day is auto-completed (shielded) so the streak
+// survives — once per week (Mon–Sun), tracked on Group.shieldUsedWeekKey.
+const maybeApplyGroupShield = async (group, dateKey) => {
+  try {
+    const weekKey = weekKeyOf(dateKey);
+    if (group.shieldUsedWeekKey === weekKey) return false; // already used this week
+    const members = await GroupMember.find({
+      groupId: group.groupId, status: 'active', effectiveFromDate: { $lte: dateKey },
+    }).select('userId effectiveFromDate').lean();
+    const required = await ghostFreeMembers(group.groupId, dateKey, members);
+    if (required.length === 0) return false;
+    const rows = await GroupDailyProgress.find({ groupId: group.groupId, dateKey })
+      .select('userId isDayComplete').lean();
+    const completeIds = new Set(rows.filter((r) => r.isDayComplete).map((r) => String(r.userId)));
+    const completeCount = required.filter((m) => completeIds.has(String(m.userId))).length;
+    if (!shieldQualifies(required.length, completeCount)) return false;
+
+    const updated = await GroupDailySummary.findOneAndUpdate(
+      { groupId: group.groupId, dateKey, isGroupDayComplete: false },
+      {
+        $setOnInsert: { groupId: group.groupId, dateKey },
+        $set: {
+          isGroupDayComplete: true,
+          shielded: true,
+          completedAt: new Date(),
+          eligibleCount: required.length,
+          completedCount: completeCount,
+        },
+      },
+      { upsert: true, new: true },
+    );
+    if (!updated) return false;
+    group.shieldUsedWeekKey = weekKey;
+    await group.save();
+    await GroupActivity.create({
+      groupId: group.groupId,
+      userId: group.ownerId,
+      displayName: 'Group Shield',
+      type: 'group_shield_used',
+      dateKey,
+    });
+    // Fire-and-forget: tell everyone the shield saved the streak.
+    (async () => {
+      try {
+        const membersAll = await GroupMember.find({ groupId: group.groupId, status: 'active' })
+          .select('userId').lean();
+        await pushToUsers(membersAll.map((m) => m.userId), {
+          title: `${group.name} — shield used 🛡️`,
+          body: `Most of you finished all five prayers. The missed day was saved — the streak lives on!`,
+          data: { type: 'group_shield_used', groupId: group.groupId },
+        });
+      } catch (e) {
+        console.warn('[streak] shield push failed:', e.message);
+      }
+    })();
+    return true;
+  } catch (e) {
+    console.warn('[streak] group shield failed:', e.message);
+    return false;
+  }
+};
+
 const rollForwardGroup = async (group) => {
-  const today = todayKeyInTz(group.timezone);
+  const today = activePrayerDayKey(group.timezone);
   // Same bounded read as the solo roll-forward — see the rationale there.
   const since = group.currentStreakStartDate || null;
   const rows = await GroupDailySummary.find({
@@ -100,7 +201,20 @@ const rollForwardGroup = async (group) => {
     ...(since ? { dateKey: { $gte: since } } : {}),
   }).select('dateKey').lean();
   const days = new Set(rows.map((r) => r.dateKey));
-  const { run, startDate } = currentRunFromDays(days, today);
+  let { run, startDate } = currentRunFromDays(days, today);
+
+  // Weekly group shield (Fix 2b): the day BEFORE the active day just
+  // ended. If it was missed but ≥80% of the required members finished 5/5
+  // and the weekly shield is unused, mark it complete and keep the streak.
+  const endedDay = previousDateKey(today);
+  if (!days.has(endedDay)) {
+    const shielded = await maybeApplyGroupShield(group, endedDay);
+    if (shielded) {
+      days.add(endedDay);
+      ({ run, startDate } = currentRunFromDays(days, today));
+    }
+  }
+
   const best = Math.max(group.bestStreak || 0, run);
   let changed = false;
   if (group.currentStreak !== run) { group.currentStreak = run; changed = true; }
@@ -186,12 +300,15 @@ const syncDayComplete = async (Model, filter) => {
 const needsDaySync = (row) =>
   !!row && ((row.completedCount || 0) >= PRAYERS_TOTAL || row.isDayComplete === true);
 
-// Checks ALL eligible active members and — only when everyone is 5/5 —
-// flips the summary COMPLETE exactly once (atomic conditional update).
+// Checks ALL eligible active members (ghosts excluded — Fix 2a) and —
+// only when everyone required is 5/5 — flips the summary COMPLETE exactly
+// once (atomic conditional update).
 const maybeCompleteGroupDay = async (group, dateKey, actor) => {
-  const eligible = await GroupMember.find({
+  const members = await GroupMember.find({
     groupId: group.groupId, status: 'active', effectiveFromDate: { $lte: dateKey },
-  }).select('userId').lean();
+  }).select('userId effectiveFromDate').lean();
+  // Ghost exclusion: members with 0 activity for 3+ days don't block.
+  const eligible = await ghostFreeMembers(group.groupId, dateKey, members);
   if (eligible.length === 0) return false;
   const rows = await GroupDailyProgress.find({ groupId: group.groupId, dateKey, eligible: true })
     .select('userId isDayComplete').lean();
@@ -244,9 +361,27 @@ export const completePrayer = async (req, res, next) => {
       return fail(res, 400, 'INVALID_PRAYER', 'Invalid prayer name');
     }
     const completed = req.body?.completed !== false; // default true
-    const soloKey = todayKeyInTz(user.timezone);
+    const now = new Date();
 
     // ── SOLO (flip + derived day-complete) ──
+    // Grace attribution (Fix 1): between midnight and Fajr a tick belongs
+    // to YESTERDAY when yesterday is still incomplete.
+    const yKey = previousDateKey(todayKeyInTz(user.timezone));
+    const yRow = await SoloDailyProgress.findOne({
+      userId: user.id, dateKey: yKey,
+    }).select('isDayComplete completedCount').lean();
+    const yesterdayIncomplete = !yRow || (yRow.completedCount || 0) < PRAYERS.length;
+    const soloKey = tickTargetDayKey(user.timezone, now, yesterdayIncomplete);
+
+    // Untick lock (Fix 3): past days are read-only. The server computes
+    // the dateKey itself (never from client input) and this guard makes
+    // the rule explicit — days BEFORE the active prayer day cannot be
+    // un-ticked. (The active day itself, including grace-attributed
+    // yesterday ticks, remains editable.)
+    if (!completed && soloKey < activePrayerDayKey(user.timezone, now)) {
+      return fail(res, 409, 'PAST_DAY_READONLY', 'Past prayer days cannot be modified');
+    }
+
     let solo = await SoloStreak.findOne({ userId: user.id });
     if (completed && !solo) solo = await SoloStreak.create({ userId: user.id });
     const soloRowFilter = { userId: new mongoose.Types.ObjectId(user.id), dateKey: soloKey };
@@ -270,7 +405,15 @@ export const completePrayer = async (req, res, next) => {
       : [];
 
     const tickGroup = async (group) => {
-      const gKey = todayKeyInTz(group.timezone);
+      // Per-group grace attribution uses the GROUP day boundary.
+      const gYesterday = previousDateKey(todayKeyInTz(group.timezone));
+      const gYRow = await GroupDailyProgress.findOne({
+        groupId: group.groupId,
+        userId: new mongoose.Types.ObjectId(user.id),
+        dateKey: gYesterday,
+      }).select('completedCount').lean();
+      const gYesterdayIncomplete = !gYRow || (gYRow.completedCount || 0) < PRAYERS.length;
+      const gKey = tickTargetDayKey(group.timezone, now, gYesterdayIncomplete);
       const membership = memberships.find((m) => m.groupId === group.groupId);
       const eligible = isMemberEligibleOn(membership, gKey);
       const rowFilter = { groupId: group.groupId, userId: new mongoose.Types.ObjectId(user.id), dateKey: gKey };
@@ -290,6 +433,15 @@ export const completePrayer = async (req, res, next) => {
           ? await maybeCompleteGroupDay(group, gKey, { _id: user.id, displayName: user.displayName })
           : false;
       } else {
+        // Untick lock (Fix 3): only the active prayer day of THIS group.
+        if (gKey < activePrayerDayKey(group.timezone, now)) {
+          return {
+            groupId: group.groupId,
+            name: group.name,
+            dateKey: gKey,
+            currentStreak: group.currentStreak,
+          };
+        }
         const row = await flipPrayer(GroupDailyProgress, rowFilter, prayer, false);
         if (row?.isDayComplete) await syncDayComplete(GroupDailyProgress, rowFilter);
         if (eligible) await revertGroupDay(group, gKey);
@@ -352,7 +504,8 @@ export const completePrayer = async (req, res, next) => {
 export const getSolo = async (req, res, next) => {
   try {
     const user = await resolveUser(req);
-    const today = todayKeyInTz(user.timezone);
+    // Grace-aware: before Fajr the "open" day is still yesterday.
+    const today = activePrayerDayKey(user.timezone);
     const row = await SoloDailyProgress.findOne({ userId: user.id, dateKey: today }).lean();
     if (!row) {
       const solo = await SoloStreak.findOne({ userId: user.id }).lean();
@@ -383,7 +536,7 @@ export const getSoloHistory = async (req, res, next) => {
     const now = new Date();
     const year = Number(req.query?.year) || now.getUTCFullYear();
     const month = Number(req.query?.month) || now.getUTCMonth() + 1;
-    const todayKey = todayKeyInTz(user.timezone);
+    const todayKey = activePrayerDayKey(user.timezone);
     const rows = await SoloDailyProgress.find({
       userId: user.id,
       dateKey: { $regex: `^${year}-${String(month).padStart(2, '0')}` },
@@ -515,21 +668,23 @@ export const getMyGroups = async (req, res, next) => {
     // endpoint O(groups × 6 roundtrips) deep.
     const out = await Promise.all(groups.map(async (g) => {
       const fresh = await rollForwardGroup(g);
-      const gKey = todayKeyInTz(g.timezone);
+      const gKey = activePrayerDayKey(g.timezone);
       const membership = membershipByGroup.get(g.groupId);
       const eligible = isMemberEligibleOn(membership, gKey);
-      const [myRow, requiredToday, doneToday, summaryToday] = await Promise.all([
+      const [myRow, allRequired, doneToday, summaryToday] = await Promise.all([
         GroupDailyProgress.findOne({
           groupId: g.groupId, userId: new mongoose.Types.ObjectId(user.id), dateKey: gKey,
         }).lean(),
-        GroupMember.countDocuments({
+        GroupMember.find({
           groupId: g.groupId, status: 'active', effectiveFromDate: { $lte: gKey },
-        }),
+        }).select('userId effectiveFromDate').lean(),
         GroupDailyProgress.countDocuments({
           groupId: g.groupId, dateKey: gKey, eligible: true, isDayComplete: true,
         }),
-        GroupDailySummary.findOne({ groupId: g.groupId, dateKey: gKey }).select('isGroupDayComplete').lean(),
+        GroupDailySummary.findOne({ groupId: g.groupId, dateKey: gKey }).select('isGroupDayComplete shielded').lean(),
       ]);
+      // Ghost exclusion (Fix 2a): required count excludes 3-day ghosts.
+      const requiredToday = (await ghostFreeMembers(g.groupId, gKey, allRequired)).length;
       return {
         groupId: g.groupId,
         name: g.name,
@@ -546,7 +701,13 @@ export const getMyGroups = async (req, res, next) => {
           eligible,
           required: eligible, // false today for brand-new joiners (counting but not blocking)
         },
-        today: { required: requiredToday, completed: doneToday, isGroupDayComplete: !!summaryToday?.isGroupDayComplete },
+        today: {
+          required: requiredToday,
+          completed: doneToday,
+          isGroupDayComplete: !!summaryToday?.isGroupDayComplete,
+          shielded: !!summaryToday?.shielded,
+        },
+        shieldAvailable: fresh.shieldUsedWeekKey !== weekKeyOf(gKey),
         isOwner: String(g.ownerId) === user.id,
       };
     }));
@@ -595,7 +756,7 @@ export const getGroupDashboard = async (req, res, next) => {
     const ctx = await requireMembership(res, groupId, user.id, { activeOnly: false });
     if (!ctx) return;
     const { group, member } = ctx;
-    const gKey = todayKeyInTz(group.timezone);
+    const gKey = activePrayerDayKey(group.timezone);
     // All five reads are independent — run them in ONE parallel round
     // instead of sequentially (each Atlas roundtrip costs ~100ms+, which
     // made opening a group feel like a full reload).
@@ -611,9 +772,15 @@ export const getGroupDashboard = async (req, res, next) => {
     ]);
     const rowByUser = new Map(rows.map((r) => [String(r.userId), r]));
     const eligibleMembers = members.filter((m) => isMemberEligibleOn(m, gKey));
+    // Ghost exclusion (Fix 2a): members with 0 activity for 3+ days are
+    // excluded from today's requirement (and flagged in the payload).
+    const activeRequired = await ghostFreeMembers(groupId, gKey, eligibleMembers);
+    const activeIds = new Set(activeRequired.map((m) => String(m.userId)));
     const memberProgress = members
       .map((m) => {
         const row = rowByUser.get(String(m.userId));
+        const isEligible = isMemberEligibleOn(m, gKey);
+        const excluded = isEligible && !activeIds.has(String(m.userId));
         return {
           userId: String(m.userId),
           displayName: m.displayName,
@@ -621,18 +788,25 @@ export const getGroupDashboard = async (req, res, next) => {
           // `eligible`/`required`: member is part of TODAY's group-day
           // requirement. New joiners count/display from day one but become
           // required only from the next day, so a late join never blocks
-          // an existing streak day.
-          eligible: isMemberEligibleOn(m, gKey),
-          required: isMemberEligibleOn(m, gKey),
+          // an existing streak day. Ghosts are flagged, not hidden.
+          eligible: isEligible,
+          required: isEligible && !excluded,
+          excludedInactive: excluded,
           completedCount: row?.completedCount || 0,
           isDayComplete: !!row?.isDayComplete,
+          // Per-prayer flags for the Prayer Circle bottom sheet.
+          fajr: !!row?.fajr,
+          dhuhr: !!row?.dhuhr,
+          asr: !!row?.asr,
+          maghrib: !!row?.maghrib,
+          isha: !!row?.isha,
           isMe: String(m.userId) === user.id,
         };
       })
       .sort((a, b) => (a.isDayComplete === b.isDayComplete ? b.completedCount - a.completedCount : (a.isDayComplete ? -1 : 1)));
 
-    const required = eligibleMembers.length;
-    const done = memberProgress.filter((m) => m.eligible && m.isDayComplete).length;
+    const required = activeRequired.length;
+    const done = memberProgress.filter((m) => m.eligible && m.required && m.isDayComplete).length;
 
     res.json({
       success: true,
@@ -657,7 +831,9 @@ export const getGroupDashboard = async (req, res, next) => {
           required,
           completed: done,
           isGroupDayComplete: !!summary?.isGroupDayComplete,
+          shielded: !!summary?.shielded,
         },
+        shieldAvailable: fresh.shieldUsedWeekKey !== weekKeyOf(gKey),
         activity: activity.map(activityDto),
       },
     });
@@ -714,7 +890,7 @@ export const getGroupHistory = async (req, res, next) => {
     const now = new Date();
     const year = Number(req.query?.year) || now.getUTCFullYear();
     const month = Number(req.query?.month) || now.getUTCMonth() + 1;
-    const todayKey = todayKeyInTz(group.timezone);
+    const todayKey = activePrayerDayKey(group.timezone);
     const summaries = await GroupDailySummary.find({
       groupId,
       dateKey: { $regex: `^${year}-${String(month).padStart(2, '0')}` },
@@ -754,7 +930,7 @@ export const getMemberDetail = async (req, res, next) => {
     if (!target || target.status !== 'active') {
       return fail(res, 404, 'NOT_MEMBER', 'That user is not an active member');
     }
-    const gKey = todayKeyInTz(group.timezone);
+    const gKey = activePrayerDayKey(group.timezone);
     const rows = await GroupDailyProgress.find({
       groupId, userId: new mongoose.Types.ObjectId(userId),
     }).select('dateKey fajr dhuhr asr maghrib isha completedCount isDayComplete').lean();
@@ -1323,6 +1499,105 @@ export const registerDevice = async (req, res, next) => {
       { upsert: true },
     );
     res.json({ success: true, data: { registered: true } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// NUDGE — "tap a member → send a friendly reminder". Push-only; the streak
+// never depends on it. Rate limits (in-memory, sufficient for a single
+// node process — this backend is not horizontally scaled):
+//   • once per (sender → target, prayer) per active day
+//   • max 3 nudges per target per day (from anyone)
+// ─────────────────────────────────────────────────────────────────────────
+
+const nudgeState = new Map(); // key -> { count, lastAt }
+const NUDGE_MAX_PER_TARGET_PER_DAY = 3;
+const NUDGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const nudgeRateKey = (targetId, dayKey) => `nudge:${targetId}:${dayKey}`;
+const nudgePairKey = (senderId, targetId, prayer, dayKey) =>
+  `nudgepair:${senderId}:${targetId}:${prayer || 'any'}:${dayKey}`;
+
+// Drop stale entries opportunistically so the Map never grows unbounded.
+const nudgePrune = () => {
+  if (nudgeState.size < 5000) return;
+  const cutoff = Date.now() - NUDGE_WINDOW_MS;
+  for (const [k, v] of nudgeState) {
+    if (v.lastAt < cutoff) nudgeState.delete(k);
+  }
+};
+
+export const nudgeMember = async (req, res, next) => {
+  try {
+    const user = await resolveUser(req);
+    const groupId = String(req.body?.groupId || '').trim();
+    const targetUserId = String(req.body?.targetUserId || '').trim();
+    const prayerName = prayerOf(req.body?.prayerName) || null;
+    if (!groupId || !targetUserId) {
+      return fail(res, 400, 'VALIDATION', 'groupId and targetUserId are required');
+    }
+    if (prayerName && !PRAYERS.includes(prayerName)) {
+      return fail(res, 400, 'INVALID_PRAYER', 'Invalid prayer name');
+    }
+    if (targetUserId === user.id) {
+      return fail(res, 400, 'VALIDATION', 'You cannot nudge yourself');
+    }
+    const ctx = await requireMembership(res, groupId, user.id);
+    if (!ctx) return;
+    const { group } = ctx;
+    const target = await memberOf(groupId, targetUserId);
+    if (!target || target.status !== 'active') {
+      return fail(res, 404, 'NOT_MEMBER', 'That user is not an active member');
+    }
+
+    // Rate limiting keyed on the GROUP's active prayer day.
+    nudgePrune();
+    const dayKey = activePrayerDayKey(group.timezone);
+    const pairKey = nudgePairKey(user.id, targetUserId, prayerName, dayKey);
+    const rateKey = nudgeRateKey(targetUserId, dayKey);
+    const nowMs = Date.now();
+    const pair = nudgeState.get(pairKey);
+    if (pair && nowMs - pair.lastAt < NUDGE_WINDOW_MS) {
+      return fail(res, 429, 'NUDGE_DUPLICATE', 'You already sent this nudge — try a different prayer or tomorrow');
+    }
+    const rate = nudgeState.get(rateKey);
+    if (rate && nowMs - rate.lastAt < NUDGE_WINDOW_MS && rate.count >= NUDGE_MAX_PER_TARGET_PER_DAY) {
+      return fail(res, 429, 'NUDGE_LIMIT', 'This member has received enough nudges today');
+    }
+    nudgeState.set(pairKey, { count: 1, lastAt: nowMs });
+    nudgeState.set(rateKey, {
+      count: (rate && nowMs - rate.lastAt < NUDGE_WINDOW_MS ? rate.count : 0) + 1,
+      lastAt: nowMs,
+    });
+
+    // Fire-and-forget push — never blocks/negates the nudge response.
+    (async () => {
+      try {
+        const label = prayerName ? PRAYER_LABELS[prayerName] : 'today\u2019s prayers';
+        await pushToUsers([targetUserId], {
+          title: group.name,
+          body: `${user.displayName || 'A member'} is reminding you to complete ${label}`,
+          data: { type: 'nudge', groupId: group.groupId, prayer: prayerName || '' },
+        });
+      } catch (e) {
+        console.warn('[streak] nudge push failed:', e.message);
+      }
+    })();
+
+    res.json({
+      success: true,
+      data: {
+        nudged: true,
+        targetUserId,
+        prayer: prayerName,
+        remainingToday: Math.max(
+          0,
+          NUDGE_MAX_PER_TARGET_PER_DAY - (nudgeState.get(rateKey)?.count || 0),
+        ),
+      },
+    });
   } catch (error) {
     next(error);
   }

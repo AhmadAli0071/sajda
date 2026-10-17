@@ -13,6 +13,16 @@ import {
   buildMonthHistory,
   relativeTime,
   applyDailyStreakRules,
+  GRACE_FALLBACK_MINUTES,
+  localMinutesInTz,
+  inGraceWindow,
+  activePrayerDayKey,
+  tickTargetDayKey,
+  GHOST_WINDOW_DAYS,
+  isGhostExcluded,
+  SHIELD_MIN_RATIO,
+  weekKeyOf,
+  shieldQualifies,
 } from '../backend/services/streakV2Logic.js';
 import { todayKeyInTz, nextDateKey, previousDateKey } from '../backend/services/streakLogic.js';
 
@@ -244,4 +254,103 @@ test('dayCompleteFromCount tolerates null/garbage counts', () => {
   assert.equal(dayCompleteFromCount(undefined), false);
   assert.equal(dayCompleteFromCount('3'), false);
   assert.equal(dayCompleteFromCount('5'), true);
+});
+
+// ---------------------------------------------------------------------------
+// GRACE PERIOD (Fix 1) — the day stays open until Fajr (fallback 4:00 AM
+// local). Streak derivation anchors on yesterday during grace; ticks are
+// attributed to yesterday when yesterday is incomplete.
+// ---------------------------------------------------------------------------
+
+test('localMinutesInTz and inGraceWindow use the LOCAL clock', () => {
+  // 2026-09-06 20:30 UTC == 2026-09-07 01:30 Karachi (+5)
+  const instant = new Date(Date.UTC(2026, 8, 6, 20, 30));
+  assert.equal(localMinutesInTz('Asia/Karachi', instant), 90); // 01:30
+  assert.equal(inGraceWindow('Asia/Karachi', instant), true);
+  assert.equal(localMinutesInTz('America/New_York', instant), 16 * 60 + 30); // 16:30
+  assert.equal(inGraceWindow('America/New_York', instant), false);
+});
+
+test('activePrayerDayKey anchors on YESTERDAY during grace', () => {
+  const instant = new Date(Date.UTC(2026, 8, 6, 20, 30)); // 01:30 Sep 7 Karachi
+  assert.equal(activePrayerDayKey('Asia/Karachi', instant), '2026-09-06');
+  // Past Fajr (fallback 4:00 AM): the new day owns the key
+  const afterFajr = new Date(Date.UTC(2026, 8, 6, 23, 30)); // 04:30 Sep 7 Karachi
+  assert.equal(activePrayerDayKey('Asia/Karachi', afterFajr), '2026-09-07');
+});
+
+test('tickTargetDayKey: late tick finishes YESTERDAY when it is incomplete', () => {
+  const instant = new Date(Date.UTC(2026, 8, 6, 20, 30)); // 01:30 Sep 7 Karachi
+  // Yesterday incomplete → tick belongs to Sep 6
+  assert.equal(tickTargetDayKey('Asia/Karachi', instant, true), '2026-09-06');
+  // Yesterday complete → tick opens Sep 7
+  assert.equal(tickTargetDayKey('Asia/Karachi', instant, false), '2026-09-07');
+});
+
+test('tickTargetDayKey outside grace always targets the calendar day', () => {
+  const instant = new Date(Date.UTC(2026, 8, 6, 12, 0)); // 17:00 Sep 6 Karachi
+  assert.equal(tickTargetDayKey('Asia/Karachi', instant, true), '2026-09-06');
+  assert.equal(tickTargetDayKey('Asia/Karachi', instant, false), '2026-09-06');
+});
+
+test('GRACE_FALLBACK_MINUTES is 4:00 AM', () => {
+  assert.equal(GRACE_FALLBACK_MINUTES, 240);
+});
+
+// ---------------------------------------------------------------------------
+// GHOST-MEMBER EXCLUSION (Fix 2a) — 0 activity for the full window means
+// the member no longer blocks the group day. New joiners (not yet subject
+// to the rule) are never ghosts.
+// ---------------------------------------------------------------------------
+
+test('isGhostExcluded: zero activity across the window → ghost', () => {
+  assert.equal(isGhostExcluded([0, 0, 0]), true);
+  assert.equal(isGhostExcluded([0, 0, 0, 0]), true);
+});
+
+test('isGhostExcluded: ANY recent activity keeps the member required', () => {
+  assert.equal(isGhostExcluded([1, 0, 0]), false);
+  assert.equal(isGhostExcluded([0, 3, 0]), false);
+  assert.equal(isGhostExcluded([0, 0, 5]), false);
+});
+
+test('isGhostExcluded: new joiners (few eligible days) are never ghosts', () => {
+  assert.equal(isGhostExcluded([0], 1), false);
+  assert.equal(isGhostExcluded([0, 0], 2), false);
+  assert.equal(isGhostExcluded([], 0), false);
+});
+
+test('GHOST_WINDOW_DAYS is 3', () => {
+  assert.equal(GHOST_WINDOW_DAYS, 3);
+});
+
+// ---------------------------------------------------------------------------
+// WEEKLY GROUP SHIELD (Fix 2b) — one automatic save per week when a missed
+// day still had ≥80% of required members at 5/5.
+// ---------------------------------------------------------------------------
+
+test('weekKeyOf returns the Monday of the week containing the dateKey', () => {
+  assert.equal(weekKeyOf('2026-09-07'), '2026-09-07'); // Monday itself
+  assert.equal(weekKeyOf('2026-09-12'), '2026-09-07'); // Saturday → that Monday
+  assert.equal(weekKeyOf('2026-09-13'), '2026-09-07'); // Sunday → SAME week (Mon-Sun)
+  assert.equal(weekKeyOf('2026-09-14'), '2026-09-14'); // next Monday → new week
+  assert.equal(weekKeyOf('2026-09-06'), '2026-08-31'); // Sunday belongs to prior week
+});
+
+test('shieldQualifies: ≥80% of required members complete on an otherwise missed day', () => {
+  // 4 required, 3 complete → 75% → NO
+  assert.equal(shieldQualifies(4, 3), false);
+  // 5 required, 4 complete → 80% → YES
+  assert.equal(shieldQualifies(5, 4), true);
+  // 10 required, 8 complete → 80% → YES
+  assert.equal(shieldQualifies(10, 8), true);
+  // 5 required, 5 complete → fully complete, NOT a shield case
+  assert.equal(shieldQualifies(5, 5), false);
+  // Degenerate inputs
+  assert.equal(shieldQualifies(0, 0), false);
+  assert.equal(shieldQualifies(1, 0), false); // 0/1 = 0% → NO
+});
+
+test('SHIELD_MIN_RATIO is 0.8', () => {
+  assert.equal(SHIELD_MIN_RATIO, 0.8);
 });

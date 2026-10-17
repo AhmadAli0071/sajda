@@ -134,7 +134,14 @@ class _PrayerScreenState extends State<PrayerScreen> {
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+          // Bottom viewPadding so the last card clears gesture-nav bars
+          // and notched chin areas on every device.
+          padding: EdgeInsets.fromLTRB(
+            16,
+            4,
+            16,
+            24 + MediaQuery.of(context).viewPadding.bottom,
+          ),
           children: [
             // City + date header
             GlassCard(
@@ -319,7 +326,14 @@ class _PrayerScreenState extends State<PrayerScreen> {
                       Text(state.t('Select a city to see Qibla', 'قبلہ دیکھنے کے لیے شہر منتخب کریں'),
                           style: Theme.of(context).textTheme.bodySmall)
                     else ...[
-                      QiblaCompass(qibla: _qibla!, isUrdu: state.isUrdu),
+                      QiblaCompass(
+                        qibla: _qibla!,
+                        isUrdu: state.isUrdu,
+                        // Screen-fraction sizing: fits small phones and
+                        // stays capped on tablets (no fixed 230px).
+                        size: (MediaQuery.of(context).size.width * 0.62)
+                            .clamp(180.0, 280.0),
+                      ),
                       const SizedBox(height: 6),
                       Text(
                         state.t(

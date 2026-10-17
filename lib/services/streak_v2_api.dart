@@ -175,6 +175,20 @@ class StreakV2Api {
 
   Future<void> registerDevice(String token, {String platform = 'android'}) =>
       ApiClient.instance.post('$_base/devices', {'token': token, 'platform': platform});
+
+  // ── Nudge (Group Prayer Circle) ──
+
+  /// Send a friendly reminder push to a group member. Backend enforces
+  /// rate limits (once per prayer per day; max 3/day per target) and
+  /// returns 429 with code NUDGE_DUPLICATE / NUDGE_LIMIT when exceeded.
+  Future<void> nudgeMember(String groupId, String targetUserId, {String? prayer}) {
+    final body = <String, dynamic>{
+      'groupId': groupId,
+      'targetUserId': targetUserId,
+    };
+    if (prayer != null) body['prayerName'] = prayer;
+    return ApiClient.instance.post('/group/v2/nudge', body);
+  }
 }
 
 // ---------- result types ----------

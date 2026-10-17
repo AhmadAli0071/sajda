@@ -45,6 +45,14 @@ class AudioPlayerState extends ChangeNotifier {
   int _ayahCount = 0;
   String? _error;
 
+  // just_audio's positionStream emits ~4x/sec. Notifying watchers at that
+  // rate rebuilds every screen watching AudioPlayerState (surah, radio,
+  // audio player) continuously during playback. Throttle to 1/sec with a
+  // trailing timer so the final position always reaches the UI.
+  DateTime _lastPositionNotify = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _positionNotifyTimer;
+  bool _disposed = false;
+
   AudioPlayerState() {
     unawaited(_bootstrap());
   }
@@ -145,7 +153,7 @@ class AudioPlayerState extends ChangeNotifier {
     });
     _positionSub = player.positionStream.listen((p) {
       _position = p;
-      notifyListeners();
+      _notifyPositionThrottled();
     });
     _durationSub = player.durationStream.listen((d) {
       _duration = d;
@@ -288,6 +296,9 @@ class AudioPlayerState extends ChangeNotifier {
     if (duration != null && d > duration) target = duration;
     if (d.isNegative) target = Duration.zero;
     await _handler?.seek(target);
+    // A user-driven seek must feel instant — don't wait for the throttle.
+    _position = target;
+    _flushPositionNotify();
   }
 
   Future<void> nextAyah() async {
@@ -360,6 +371,29 @@ class AudioPlayerState extends ChangeNotifier {
 
   // ---------- Internals ----------
 
+  /// Coalesces position-stream notifications to ~1/sec. A trailing timer
+  /// guarantees the final position of a seek or track change always lands.
+  void _notifyPositionThrottled() {
+    if (_disposed) return;
+    final now = DateTime.now();
+    final elapsed = now.difference(_lastPositionNotify);
+    if (elapsed >= const Duration(seconds: 1)) {
+      _lastPositionNotify = now;
+      notifyListeners();
+    } else {
+      _positionNotifyTimer ??=
+          Timer(const Duration(seconds: 1) - elapsed, _flushPositionNotify);
+    }
+  }
+
+  void _flushPositionNotify() {
+    _positionNotifyTimer?.cancel();
+    _positionNotifyTimer = null;
+    if (_disposed) return;
+    _lastPositionNotify = DateTime.now();
+    notifyListeners();
+  }
+
   AudioPlayer? get player => _player;
 
   void _updateMediaItem({
@@ -397,6 +431,8 @@ class AudioPlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _positionNotifyTimer?.cancel();
     _stateSub?.cancel();
     _positionSub?.cancel();
     _durationSub?.cancel();
