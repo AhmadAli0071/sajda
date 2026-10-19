@@ -326,7 +326,10 @@ const maybeCompleteGroupDay = async (group, dateKey, actor) => {
       },
     },
     { upsert: true, new: true },
-  );
+  ).catch((e) => {
+    if (e?.code === 11000) return null;
+    throw e;
+  });
   // The conditional update guarantees exactly one writer sees false→true,
   // but upsert races can still land here; verify the flip we own.
   if (!updated) return false;
@@ -361,6 +364,10 @@ export const completePrayer = async (req, res, next) => {
       return fail(res, 400, 'INVALID_PRAYER', 'Invalid prayer name');
     }
     const completed = req.body?.completed !== false; // default true
+    // Dynamic Fajr grace cutoff (minutes since local midnight) from the
+    // client's actual prayer times. Fallback 4:00 AM if not provided.
+    const fajrMinutes = Math.max(60, Math.min(600,
+      Number(req.body?.fajrMinutes) || undefined || 4 * 60));
     const now = new Date();
 
     // ── SOLO (flip + derived day-complete) ──
@@ -371,14 +378,14 @@ export const completePrayer = async (req, res, next) => {
       userId: user.id, dateKey: yKey,
     }).select('isDayComplete completedCount').lean();
     const yesterdayIncomplete = !yRow || (yRow.completedCount || 0) < PRAYERS.length;
-    const soloKey = tickTargetDayKey(user.timezone, now, yesterdayIncomplete);
+    const soloKey = tickTargetDayKey(user.timezone, now, yesterdayIncomplete, fajrMinutes);
 
     // Untick lock (Fix 3): past days are read-only. The server computes
     // the dateKey itself (never from client input) and this guard makes
     // the rule explicit — days BEFORE the active prayer day cannot be
     // un-ticked. (The active day itself, including grace-attributed
     // yesterday ticks, remains editable.)
-    if (!completed && soloKey < activePrayerDayKey(user.timezone, now)) {
+    if (!completed && soloKey < activePrayerDayKey(user.timezone, now, fajrMinutes)) {
       return fail(res, 409, 'PAST_DAY_READONLY', 'Past prayer days cannot be modified');
     }
 
@@ -413,7 +420,7 @@ export const completePrayer = async (req, res, next) => {
         dateKey: gYesterday,
       }).select('completedCount').lean();
       const gYesterdayIncomplete = !gYRow || (gYRow.completedCount || 0) < PRAYERS.length;
-      const gKey = tickTargetDayKey(group.timezone, now, gYesterdayIncomplete);
+      const gKey = tickTargetDayKey(group.timezone, now, gYesterdayIncomplete, fajrMinutes);
       const membership = memberships.find((m) => m.groupId === group.groupId);
       const eligible = isMemberEligibleOn(membership, gKey);
       const rowFilter = { groupId: group.groupId, userId: new mongoose.Types.ObjectId(user.id), dateKey: gKey };
@@ -434,7 +441,7 @@ export const completePrayer = async (req, res, next) => {
           : false;
       } else {
         // Untick lock (Fix 3): only the active prayer day of THIS group.
-        if (gKey < activePrayerDayKey(group.timezone, now)) {
+        if (gKey < activePrayerDayKey(group.timezone, now, fajrMinutes)) {
           return {
             groupId: group.groupId,
             name: group.name,
@@ -742,7 +749,21 @@ export const createGroup = async (req, res, next) => {
     });
     res.status(201).json({
       success: true,
-      data: { groupId: group.groupId, name: group.name, inviteCode: group.inviteCode, visibility: group.visibility, timezone: group.timezone },
+      data: {
+        groupId: group.groupId,
+        name: group.name,
+        status: group.status,
+        visibility: group.visibility,
+        timezone: group.timezone,
+        memberCount: group.memberCount,
+        inviteCode: group.inviteCode,
+        currentStreak: group.currentStreak || 0,
+        bestStreak: group.bestStreak || 0,
+        currentStreakStartDate: group.currentStreakStartDate || null,
+        isOwner: true,
+        myRole: 'owner',
+        dateKey: activePrayerDayKey(group.timezone),
+      },
     });
   } catch (error) {
     next(error);
@@ -763,7 +784,7 @@ export const getGroupDashboard = async (req, res, next) => {
     const [fresh, members, rows, summary, activity] = await Promise.all([
       rollForwardGroup(group),
       GroupMember.find({ groupId, status: 'active' })
-        .select('userId displayName role effectiveFromDate').lean(),
+        .select('userId displayName role effectiveFromDate status').lean(),
       GroupDailyProgress.find({ groupId, dateKey: gKey }).lean(),
       GroupDailySummary.findOne({ groupId, dateKey: gKey }).lean(),
       // Same feed filter as getGroupActivity — per-prayer rows are retired.
