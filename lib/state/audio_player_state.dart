@@ -90,8 +90,14 @@ class AudioPlayerState extends ChangeNotifier {
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'app.sajda.dataplus.audio',
           androidNotificationChannelName: 'Quran Audio',
-          androidNotificationOngoing: true,
-          androidStopForegroundOnPause: true,
+          // Keep the service in the foreground even while paused. With
+          // stopForegroundOnPause: true a pause demotes the process to a
+          // cached state, and aggressive OEM ROMs (HiOS/Tecno, MIUI, etc.)
+          // freeze or kill it within seconds — background playback then dies.
+          // The service (and notification) only go away on a full stop().
+          // audio_service asserts androidNotificationOngoing is false here.
+          androidNotificationOngoing: false,
+          androidStopForegroundOnPause: false,
         ),
       );
     } catch (_) {

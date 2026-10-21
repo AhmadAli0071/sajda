@@ -23,12 +23,23 @@ class StreakV2Api {
   }
 
   /// THE one canonical prayer tick. One action updates Solo + every group.
-  Future<CompletePrayerResult> completePrayer(String prayer, {bool completed = true}) async {
-    final json = await ApiClient.instance
-        .post('$_base/prayers/complete', {'prayer': prayer, 'completed': completed});
+  /// [fajrMinutes] = minutes since local midnight when Fajr begins today,
+  /// so the backend grace window uses the real Fajr time (not a fixed 4 AM).
+  Future<CompletePrayerResult> completePrayer(
+    String prayer, {
+    bool completed = true,
+    int? fajrMinutes,
+  }) async {
+    final json = await ApiClient.instance.post('$_base/prayers/complete', {
+      'prayer': prayer.toLowerCase(),
+      'completed': completed,
+      'fajrMinutes': ?fajrMinutes,
+    });
     final data = json['data'] as Map<String, dynamic>;
     return CompletePrayerResult(
-      solo: SoloStreakData.fromJson(data['solo'] as Map<String, dynamic>? ?? {}),
+      solo: SoloStreakData.fromJson(
+        data['solo'] as Map<String, dynamic>? ?? {},
+      ),
       groups: (data['groups'] as List? ?? [])
           .map((e) => GroupTouch.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -46,7 +57,9 @@ class StreakV2Api {
   Future<List<GroupSummary>> getMyGroups() async {
     final json = await ApiClient.instance.get('$_base/groups');
     final list = json['data']?['groups'] as List? ?? [];
-    return list.map((e) => GroupSummary.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => GroupSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<GroupDetail> createGroup(String name, {bool public = false}) async {
@@ -58,27 +71,46 @@ class StreakV2Api {
   }
 
   Future<GroupDashboardData> getGroupDashboard(String groupId) async {
-    final json = await ApiClient.instance.get('$_base/groups/$groupId/dashboard');
+    final json = await ApiClient.instance.get(
+      '$_base/groups/$groupId/dashboard',
+    );
     return GroupDashboardData.fromJson(json['data'] as Map<String, dynamic>);
   }
 
-  Future<MemberDetailData> getMemberDetail(String groupId, String userId) async {
-    final json = await ApiClient.instance.get('$_base/groups/$groupId/members/$userId');
+  Future<MemberDetailData> getMemberDetail(
+    String groupId,
+    String userId,
+  ) async {
+    final json = await ApiClient.instance.get(
+      '$_base/groups/$groupId/members/$userId',
+    );
     return MemberDetailData.fromJson(json['data'] as Map<String, dynamic>);
   }
 
-  Future<HistoryData> getGroupHistory(String groupId, {int? year, int? month}) async {
+  Future<HistoryData> getGroupHistory(
+    String groupId, {
+    int? year,
+    int? month,
+  }) async {
     final q = (year != null && month != null) ? '?year=$year&month=$month' : '';
-    final json = await ApiClient.instance.get('$_base/groups/$groupId/history$q');
+    final json = await ApiClient.instance.get(
+      '$_base/groups/$groupId/history$q',
+    );
     return HistoryData.fromJson(json['data'] as Map<String, dynamic>);
   }
 
-  Future<ActivityPage> getGroupActivity(String groupId, {DateTime? before, int limit = 20}) async {
+  Future<ActivityPage> getGroupActivity(
+    String groupId, {
+    DateTime? before,
+    int limit = 20,
+  }) async {
     final params = <String>[
       if (before != null) 'before=${before.toIso8601String()}',
       'limit=$limit',
     ];
-    final json = await ApiClient.instance.get('$_base/groups/$groupId/activity?${params.join('&')}');
+    final json = await ApiClient.instance.get(
+      '$_base/groups/$groupId/activity?${params.join('&')}',
+    );
     final data = json['data'] as Map<String, dynamic>;
     return ActivityPage(
       items: (data['items'] as List? ?? [])
@@ -92,29 +124,40 @@ class StreakV2Api {
   Future<void> leaveGroup(String groupId) =>
       ApiClient.instance.post('$_base/groups/$groupId/leave', {});
 
-  Future<void> removeMember(String groupId, String userId) =>
-      ApiClient.instance.post('$_base/groups/$groupId/members/$userId/remove', {});
+  Future<void> removeMember(String groupId, String userId) => ApiClient.instance
+      .post('$_base/groups/$groupId/members/$userId/remove', {});
 
   Future<void> renameGroup(String groupId, String name) async {
-    await ApiClient.instance.post('$_base/groups/$groupId/rename', {'name': name});
+    await ApiClient.instance.post('$_base/groups/$groupId/rename', {
+      'name': name,
+    });
   }
 
   Future<String> rotateInviteCode(String groupId) async {
-    final json = await ApiClient.instance.post('$_base/groups/$groupId/invite/rotate', {});
+    final json = await ApiClient.instance.post(
+      '$_base/groups/$groupId/invite/rotate',
+      {},
+    );
     return json['data']?['inviteCode']?.toString() ?? '';
   }
 
-  Future<void> transferOwnership(String groupId, String userId) =>
-      ApiClient.instance.post('$_base/groups/$groupId/transfer', {'userId': userId});
+  Future<void> transferOwnership(String groupId, String userId) => ApiClient
+      .instance
+      .post('$_base/groups/$groupId/transfer', {'userId': userId});
 
   Future<void> archiveGroup(String groupId) =>
       ApiClient.instance.post('$_base/groups/$groupId/archive', {});
 
+  /// Permanent, owner-only delete. Cascades members/history/progress.
+  Future<void> deleteGroup(String groupId) =>
+      ApiClient.instance.post('$_base/groups/$groupId/delete', {});
+
   // ── Discover / invite / join ──
 
   Future<DiscoverPage> discoverGroups(String query, {int page = 0}) async {
-    final json = await ApiClient.instance
-        .get('$_base/groups/discover?q=${Uri.encodeQueryComponent(query)}&page=$page');
+    final json = await ApiClient.instance.get(
+      '$_base/groups/discover?q=${Uri.encodeQueryComponent(query)}&page=$page',
+    );
     final data = json['data'] as Map<String, dynamic>;
     return DiscoverPage(
       items: (data['items'] as List? ?? [])
@@ -126,13 +169,18 @@ class StreakV2Api {
   }
 
   Future<InvitePreview> getInvitePreview(String code) async {
-    final json = await ApiClient.instance.get('$_base/invite/${code.toUpperCase()}');
+    final json = await ApiClient.instance.get(
+      '$_base/invite/${code.toUpperCase()}',
+    );
     return InvitePreview.fromJson(json['data'] as Map<String, dynamic>);
   }
 
   /// Direct join via invite code. Already-member is a SUCCESS result.
   Future<JoinResult> joinByInviteCode(String code) async {
-    final json = await ApiClient.instance.post('$_base/invite/${code.toUpperCase()}/join', {});
+    final json = await ApiClient.instance.post(
+      '$_base/invite/${code.toUpperCase()}/join',
+      {},
+    );
     final data = json['data'] as Map<String, dynamic>;
     return JoinResult(
       alreadyMember: data['alreadyMember'] == true,
@@ -146,9 +194,13 @@ class StreakV2Api {
       ApiClient.instance.post('$_base/groups/$groupId/join-request', {});
 
   Future<List<JoinRequestItem>> getGroupRequests(String groupId) async {
-    final json = await ApiClient.instance.get('$_base/groups/$groupId/requests');
+    final json = await ApiClient.instance.get(
+      '$_base/groups/$groupId/requests',
+    );
     final list = json['data']?['items'] as List? ?? [];
-    return list.map((e) => JoinRequestItem.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => JoinRequestItem.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> approveRequest(String requestId) =>
@@ -174,14 +226,21 @@ class StreakV2Api {
       ApiClient.instance.post('$_base/notifications/seen', {});
 
   Future<void> registerDevice(String token, {String platform = 'android'}) =>
-      ApiClient.instance.post('$_base/devices', {'token': token, 'platform': platform});
+      ApiClient.instance.post('$_base/devices', {
+        'token': token,
+        'platform': platform,
+      });
 
   // ── Nudge (Group Prayer Circle) ──
 
   /// Send a friendly reminder push to a group member. Backend enforces
   /// rate limits (once per prayer per day; max 3/day per target) and
   /// returns 429 with code NUDGE_DUPLICATE / NUDGE_LIMIT when exceeded.
-  Future<void> nudgeMember(String groupId, String targetUserId, {String? prayer}) {
+  Future<void> nudgeMember(
+    String groupId,
+    String targetUserId, {
+    String? prayer,
+  }) {
     final body = <String, dynamic>{
       'groupId': groupId,
       'targetUserId': targetUserId,
@@ -198,13 +257,20 @@ class GroupTouch {
   final String name;
   final String dateKey;
   final int currentStreak;
-  const GroupTouch({required this.groupId, required this.name, this.dateKey = '', this.currentStreak = 0});
+  const GroupTouch({
+    required this.groupId,
+    required this.name,
+    this.dateKey = '',
+    this.currentStreak = 0,
+  });
   factory GroupTouch.fromJson(Map<String, dynamic> json) => GroupTouch(
-        groupId: json['groupId']?.toString() ?? '',
-        name: json['name']?.toString() ?? '',
-        dateKey: json['dateKey']?.toString() ?? '',
-        currentStreak: json['currentStreak'] is num ? (json['currentStreak'] as num).toInt() : 0,
-      );
+    groupId: json['groupId']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    dateKey: json['dateKey']?.toString() ?? '',
+    currentStreak: json['currentStreak'] is num
+        ? (json['currentStreak'] as num).toInt()
+        : 0,
+  );
 }
 
 class CompletePrayerResult {
@@ -218,21 +284,34 @@ class JoinResult {
   final String groupId;
   final String name;
   final String message;
-  const JoinResult({required this.alreadyMember, required this.groupId, required this.name, required this.message});
+  const JoinResult({
+    required this.alreadyMember,
+    required this.groupId,
+    required this.name,
+    required this.message,
+  });
 }
 
 class ActivityPage {
   final List<ActivityItem> items;
   final bool hasMore;
   final String? nextCursor;
-  const ActivityPage({required this.items, required this.hasMore, this.nextCursor});
+  const ActivityPage({
+    required this.items,
+    required this.hasMore,
+    this.nextCursor,
+  });
 }
 
 class DiscoverPage {
   final List<DiscoverGroup> items;
   final bool hasMore;
   final int page;
-  const DiscoverPage({required this.items, required this.hasMore, required this.page});
+  const DiscoverPage({
+    required this.items,
+    required this.hasMore,
+    required this.page,
+  });
 }
 
 class NotificationFeed {

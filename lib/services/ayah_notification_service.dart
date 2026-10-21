@@ -42,6 +42,9 @@ class AyahNotificationService {
   }
 
   /// (Re)schedules the daily ayah notification to repeat every day.
+  /// On Fridays the notification shows an ayah from Surah Al-Kahf
+  /// (week-based rotation across its 110 verses) instead of the regular
+  /// daily ayah.
   Future<void> scheduleNext7Days({int hour = 13, int minute = 30, String timezone = 'Asia/Karachi'}) async {
     if (!_initialized) return;
     await cancelAll();
@@ -53,12 +56,26 @@ class AyahNotificationService {
     if (when.isBefore(now)) {
       when = when.add(const Duration(days: 1));
     }
-    final (surah, ayah) = QuranService.ayahForDay(dayOfYear);
+
+    final isFriday = when.weekday == DateTime.friday;
+    int surah, ayah;
+    String title;
+    if (isFriday) {
+      // Week-based rotation: pick one of Surah Al-Kahf's 110 ayahs per week.
+      final week = ((when.difference(tz.TZDateTime(location, when.year, 1, 1)).inDays) / 7).ceil();
+      ayah = (week % q.getVerseCount(18)) + 1;
+      surah = 18;
+      title = 'Surah Al-Kahf • Ayah $ayah';
+    } else {
+      (surah, ayah) = QuranService.ayahForDay(dayOfYear);
+      title = 'Ayah of the Day • ${q.getSurahNameEnglish(surah)} $ayah';
+    }
+
     final arabic = QuranService.instance.verseArabic(surah, ayah);
     final body = arabic.length > 200 ? '${arabic.substring(0, 200)}...' : arabic;
     await _plugin.zonedSchedule(
       id: _baseId,
-      title: 'Ayah of the Day • ${q.getSurahNameEnglish(surah)} $ayah',
+      title: title,
       body: body,
       scheduledDate: when,
       notificationDetails: const NotificationDetails(

@@ -89,10 +89,7 @@ class AdhkarScreen extends StatelessWidget {
                         ],
                         const SizedBox(height: 3),
                         Text(
-                          state.t(
-                            '${c.items.length} remembrances',
-                            '${c.items.length} اذکار',
-                          ),
+                          '${c.items.length} ${state.t('remembrances', 'اذکار')}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],

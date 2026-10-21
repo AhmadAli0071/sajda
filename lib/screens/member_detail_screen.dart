@@ -179,8 +179,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ),
             child: Text(
               app.t(
-                'New member — prayers count from today; part of the group day from tomorrow.',
-                'نئے رکن — نمازیں آج سے شمار ہوں گی؛ گروپ کے دن میں کل سے شامل ہوں گے۔',
+                'Group counting starts tomorrow.',
+                'گروپ کا شمار کل سے شروع ہوگا۔',
               ),
               style: const TextStyle(fontSize: 12.5, color: AppColors.primaryDeep),
             ),
@@ -240,7 +240,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          app.t(e.value.$1, e.value.$2),
+                          (e.key == 'dhuhr' && DateTime.now().weekday == DateTime.friday)
+                              ? app.t('Friday', 'جمعہ')
+                              : app.t(e.value.$1, e.value.$2),
                           style: TextStyle(
                             fontSize: 10.5,
                             color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,

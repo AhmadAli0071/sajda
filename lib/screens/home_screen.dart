@@ -12,6 +12,7 @@ import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/date_service.dart';
 import '../services/quran_service.dart';
+import '../services/ramadan_service.dart';
 import '../state/app_state.dart';
 import '../state/streak_state.dart';
 import '../theme/app_theme.dart';
@@ -24,6 +25,7 @@ import 'map_location_picker_screen.dart';
 import 'prayer_screen.dart';
 import 'qibla_screen.dart';
 import 'quran_screen.dart';
+import 'ramadan_screen.dart';
 import 'solo_dashboard_screen.dart';
 import 'streak_home_screen.dart';
 
@@ -137,14 +139,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _fmtCountdown(AppState state, int seconds) {
     if (seconds <= 0) return '--';
     final h = seconds ~/ 3600;
-    final m = ((seconds % 3600) ~/ 60);
-    // Long windows show hours only so the countdown never ellipsizes in
-    // the hero row next to the upcoming-prayer chip.
-    if (h > 0) {
-      return state.isUrdu ? '$h گھنٹے' : '${h}h';
-    }
-    final mm = m == 0 ? 1 : m;
-    return state.isUrdu ? '$mm منٹ' : '${mm}m';
+    final m = (seconds % 3600) ~/ 60;
+    return state.isUrdu ? '$h:$m' : '${h}h ${m}m';
   }
 
   /// Builds the hero card state from the shared per-prayer window rules:
@@ -319,9 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final hero = clock?.current ?? clock?.next;
     final currentName = clock == null
         ? state.t('Loading...', 'لوڈ ہو رہا ہے...')
-        : (lang == 'ur'
-            ? (AppStrings.prayerNames[hero!.name] ?? hero.name)
-            : hero!.name);
+        : AppStrings.prayerDisplayName(hero!.name, isUrdu: lang == 'ur');
 
     return Scaffold(
       backgroundColor:
@@ -615,102 +609,68 @@ class _HomeScreenState extends State<HomeScreen> {
                         // down as a whole (never clipped) when space is
                         // tight — this also keeps the 'Tomorrow' tag
                         // visible on the next-Fajr chip during the night.
-                        Row(
+                        // Ends-in (open window) or starts-in (waiting for
+                        // the next prayer) on the left, the upcoming prayer
+                        // chip below it stretched to full width so the text
+                        // never gets clipped into "…".
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              clock.current != null
-                                  ? Icons.hourglass_bottom_rounded
-                                  : Icons.schedule_rounded,
-                              color: Colors.white.withValues(alpha: 0.75),
-                              size: 15,
-                            ),
-                            const SizedBox(width: 6),
-                            // Flexible (not fixed): at large font scales or
-                            // in long Urdu strings the countdown must shrink
-                            // instead of overflowing the row.
-                            Flexible(
-                              child: Text(
-                                clock.current != null
-                                    ? '${state.t('Ends in', 'باقی')} ${_fmtCountdown(state, clock.endsInSec)}'
-                                    : '${state.t('Starts in', 'شروع ہونے میں')} ${_fmtCountdown(state, clock.endsInSec)}',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w800,
+                            Row(
+                              children: [
+                                Icon(
+                                  clock.current != null
+                                      ? Icons.hourglass_bottom_rounded
+                                      : Icons.schedule_rounded,
+                                  color:
+                                      Colors.white.withValues(alpha: 0.75),
+                                  size: 15,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  clock.current != null
+                                      ? '${state.t('Ends in', 'باقی')} ${_fmtCountdown(state, clock.endsInSec)}'
+                                      : '${state.t('Starts in', 'شروع ہونے میں')} ${_fmtCountdown(state, clock.endsInSec)}',
+                                  style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.92),
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  maxLines: 1,
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            if (clock.current != null)
-                              Expanded(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerRight,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.18),
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          '${state.t('Next', 'اگلی')}: ',
-                                          style: TextStyle(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.85),
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        Text(
-                                          lang == 'ur'
-                                              ? (AppStrings.prayerNames[
-                                                      clock.next.name] ??
-                                                  clock.next.name)
-                                              : clock.next.name,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                          maxLines: 1,
-                                        ),
-                                        Text(
-                                          ' · ${formatTime12(clock.next.time)}',
-                                          style: TextStyle(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.85),
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                          maxLines: 1,
-                                        ),
-                                        if (clock.nextIsTomorrow) ...[
-                                          const SizedBox(width: 5),
-                                          Text(
-                                            state.t('Tomorrow', 'کل'),
-                                            style: TextStyle(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.75),
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
+                            if (clock.current != null) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      Colors.black.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Text(
+                                  '${state.t('Next', 'اگلی')}: '
+                                  '${AppStrings.prayerDisplayName(clock.next.name, isUrdu: lang == 'ur')}'
+                                  ' · ${formatTime12(clock.next.time)}'
+                                  '${clock.nextIsTomorrow ? ' · ${state.t('Tomorrow', 'کل')}' : ''}',
+                                  maxLines: 1,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.9),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                              )
-                            else if (clock.nextIsTomorrow)
+                              ),
+                            ] else if (clock.nextIsTomorrow) ...[
+                              const SizedBox(height: 4),
                               Text(
                                 state.t('Tomorrow', 'کل'),
                                 style: TextStyle(
@@ -719,6 +679,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
+                            ],
                           ],
                         ),
                       ],
@@ -727,6 +688,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+
+            // ── Ramadan Mode banner (only during Ramadan) ──
+            if (RamadanService.isRamadan())
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  child: _HomeRamadanBanner(
+                    app: state,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const RamadanScreen(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
             // ── Your Streak ──
             const SliverToBoxAdapter(
@@ -918,10 +895,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                         const SizedBox(height: 10),
                         Text(
-                          state.t(
-                            '${q.getSurahNameEnglish(_ayah!.surah)} • Ayah ${_ayah!.ayah}',
-                            '${q.getSurahNameArabic(_ayah!.surah)} • آیت ${_ayah!.ayah}',
-                          ),
+                          state.isUrdu
+                              ? '${q.getSurahNameArabic(_ayah!.surah)} • آیت ${_ayah!.ayah}'
+                              : '${q.getSurahNameEnglish(_ayah!.surah)} • ${state.t('Ayah', 'آیت')} ${_ayah!.ayah}',
                           textAlign: TextAlign.right,
                           style: const TextStyle(
                             color: AppColors.primary,
@@ -1158,6 +1134,91 @@ class _HomeStreakCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HomeRamadanBanner extends StatelessWidget {
+  final AppState app;
+  final VoidCallback onTap;
+
+  const _HomeRamadanBanner({required this.app, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final day = RamadanService.ramadanDay();
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1A1A3E), Color(0xFF5B2C6F)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF5B2C6F).withValues(alpha: 0.28),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.nightlight_round,
+                color: Color(0xFFFFE082),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    app.t(
+                      'Ramadan Mubarak • Day $day',
+                      'رمضان مبارک • دن $day',
+                    ),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    app.t(
+                      'Suhoor & Iftar countdown, 30-day calendar',
+                      'سحری و افطار کا وقت، 30 دن کا کیلنڈر',
+                    ),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white70,
+            ),
+          ],
+        ),
       ),
     );
   }

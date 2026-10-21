@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../screens/legal_screen.dart';
 import '../screens/location_setup_screen.dart';
 import '../services/api_client.dart';
+import '../services/daily_reminder_service.dart';
 import '../services/prayer_notification_service.dart';
 import '../state/app_state.dart';
 import '../state/streak_state.dart';
@@ -17,6 +18,115 @@ class SettingsScreen extends StatelessWidget {
 
   /// Re-entry guard for the prayer-alerts toggle (screen is stateless).
   static bool _togglingNotifications = false;
+  static bool _togglingDailyReminder = false;
+
+  Future<void> _toggleDailyReminder(BuildContext context, bool value) async {
+    if (_togglingDailyReminder) return;
+    final state = context.read<AppState>();
+    _togglingDailyReminder = true;
+    try {
+      if (value) {
+        final granted = await PrayerNotificationService.instance
+            .requestNotificationPermission();
+        if (!context.mounted) return;
+        if (!granted) {
+          showAppSnack(
+            context,
+            state.t(
+              'Notification permission is off — enable it in system settings for daily reminders',
+              'اطلاعات کی اجازت بند ہے — روزانہ یاد دہانی کے لیے سسٹم ترتیبات میں اجازت دیں',
+            ),
+            error: true,
+          );
+          return;
+        }
+      }
+      await state.setDailyReminderEnabled(value);
+      if (value) {
+        await DailyReminderService.instance.scheduleNext7Days(
+          timezone: state.locationTimezone,
+          category: state.dailyReminderCategory,
+          isUrdu: state.isUrdu,
+        );
+      } else {
+        await DailyReminderService.instance.cancelAll();
+      }
+      if (!context.mounted) return;
+      showAppSnack(
+        context,
+        value
+            ? state.t(
+                'Daily zikr & du\'a reminder enabled (8:00 AM)',
+                'روزانہ ذکر و دعا کی یاد دہانی فعال (صبح 8:00)',
+              )
+            : state.t(
+                'Daily reminders turned off',
+                'روزانہ یاد دہانیاں بند کر دی گئیں',
+              ),
+      );
+    } finally {
+      _togglingDailyReminder = false;
+    }
+  }
+
+  void _showReminderCategoryPicker(BuildContext context, AppState state) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              state.t('Daily reminder content', 'روزانہ یاد دہانی کا مواد'),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            for (final (value, en, ur) in const <(String, String, String)>[
+              ('all', 'Zikr & Du\'a', 'ذکر اور دعا'),
+              ('zikr', 'Zikr only', 'صرف ذکر'),
+              ('dua', 'Du\'a only', 'صرف دعا'),
+            ])
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  state.dailyReminderCategory == value
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_off_rounded,
+                  color: state.dailyReminderCategory == value
+                      ? AppColors.primary
+                      : null,
+                ),
+                title: Text(
+                  state.t(en, ur),
+                  style: TextStyle(
+                    fontWeight: state.dailyReminderCategory == value
+                        ? FontWeight.w800
+                        : FontWeight.w500,
+                    color: state.dailyReminderCategory == value
+                        ? AppColors.primary
+                        : null,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await state.setDailyReminderCategory(value);
+                  if (state.dailyReminderEnabled) {
+                    await DailyReminderService.instance.scheduleNext7Days(
+                      timezone: state.locationTimezone,
+                      category: value,
+                      isUrdu: state.isUrdu,
+                    );
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _toggleNotifications(BuildContext context, bool value) async {
     // Re-entry guard: rapid taps used to stack permission dialogs and race
@@ -47,7 +157,7 @@ class SettingsScreen extends StatelessWidget {
               .scheduleAll(times.prayers, isUrdu: state.isUrdu, timezone: state.locationTimezone, prayerModes: state.prayerNotificationModes, city: state.displayCityName);
         } catch (e) {
           if (!context.mounted) return;
-          showAppSnack(context, state.t('Could not schedule alerts: ${e.toString()}', 'الرٹس شیڈول نہیں ہوئے: ${e.toString()}'), error: true);
+          showAppSnack(context, '${state.t('Could not schedule alerts', 'الرٹس شیڈول نہیں ہوئے')}: ${e.toString()}', error: true);
         }
       } else {
         await state.setNotificationsEnabled(false);
@@ -307,7 +417,7 @@ class SettingsScreen extends StatelessWidget {
                   final mode = state.prayerNotificationModes[p] ?? 'full';
                   return _PrayerModeTile(
                     prayer: p,
-                    prayerUr: state.t(p, AppStrings.prayerNames[p] ?? p),
+                    prayerUr: AppStrings.prayerDisplayName(p, isUrdu: state.isUrdu),
                     mode: mode,
                     fullLabel: state.t('Full Azan', 'پورے اذان'),
                     silentLabel: state.t('Silent', 'چپ چاپ'),
@@ -318,6 +428,30 @@ class SettingsScreen extends StatelessWidget {
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 const _ExactAzanTile(),
                 const SizedBox(height: 6),
+              ],
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              _SwitchTile(
+                icon: Icons.auto_awesome_rounded,
+                title: state.t('Daily Zikr & Du\'a', 'روزانہ ذکر اور دعا'),
+                subtitle: state.t(
+                  'A short reminder every morning at 8:00 AM',
+                  'ہر صبح 8:00 بجے ایک مختصر یاد دہانی',
+                ),
+                value: state.dailyReminderEnabled,
+                onChanged: (v) => _toggleDailyReminder(context, v),
+              ),
+              if (state.dailyReminderEnabled) ...[
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                _NavigationTile(
+                  icon: Icons.tune_rounded,
+                  title: state.t('Reminder content', 'یاد دہانی کا مواد'),
+                  subtitle: switch (state.dailyReminderCategory) {
+                    'zikr' => state.t('Zikr only', 'صرف ذکر'),
+                    'dua' => state.t('Du\'a only', 'صرف دعا'),
+                    _ => state.t('Zikr & Du\'a', 'ذکر اور دعا'),
+                  },
+                  onTap: () => _showReminderCategoryPicker(context, state),
+                ),
               ],
             ]),
           ),

@@ -54,34 +54,42 @@ class GroupPrayerCircle extends StatelessWidget {
               builder: (context, constraints) {
                 final size = math.min(constraints.maxWidth, constraints.maxHeight);
                 final radius = size / 2 - 28;
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    _CenterHub(
-                      completed: completed,
-                      needed: needed,
-                      dayComplete: dayComplete,
-                      shielded: shielded,
-                      shieldAvailable: shieldAvailable,
-                    ),
-                    for (var i = 0; i < shown.length; i++)
-                      _positionedAvatar(
-                        angle: (i / shown.length) * 2 * math.pi - math.pi / 2,
-                        radius: radius,
-                        member: shown[i],
-                      ),
-                    if (extra > 0)
-                      _positionedAvatar(
-                        angle: (shown.length / (shown.length + 1)) * 2 * math.pi - math.pi / 2,
-                        radius: radius,
-                        member: MemberProgress(
-                          userId: '',
-                          displayName: '+$extra',
-                          completedCount: 0,
+                return Center(
+                  child: SizedBox(
+                    width: size,
+                    height: size,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        _CenterHub(
+                          completed: completed,
+                          needed: needed,
+                          dayComplete: dayComplete,
+                          shielded: shielded,
+                          shieldAvailable: shieldAvailable,
                         ),
-                        isExtra: true,
-                      ),
-                  ],
+                        for (var i = 0; i < shown.length; i++)
+                          _positionedAvatar(
+                            angle: (i / shown.length) * 2 * math.pi - math.pi / 2,
+                            radius: radius,
+                            center: size / 2,
+                            member: shown[i],
+                          ),
+                        if (extra > 0)
+                          _positionedAvatar(
+                            angle: (shown.length / (shown.length + 1)) * 2 * math.pi - math.pi / 2,
+                            radius: radius,
+                            center: size / 2,
+                            member: MemberProgress(
+                              userId: '',
+                              displayName: '+$extra',
+                              completedCount: 0,
+                            ),
+                            isExtra: true,
+                          ),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),
@@ -109,12 +117,13 @@ class GroupPrayerCircle extends StatelessWidget {
   Widget _positionedAvatar({
     required double angle,
     required double radius,
+    required double center,
     required MemberProgress member,
     bool isExtra = false,
   }) {
     return Positioned(
-      left: radius + radius * math.cos(angle) - 24,
-      top: radius + radius * math.sin(angle) - 24,
+      left: center + radius * math.cos(angle) - 24,
+      top: center + radius * math.sin(angle) - 24,
       child: _MemberAvatar(
         member: member,
         isExtra: isExtra,

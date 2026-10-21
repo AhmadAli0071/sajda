@@ -6,7 +6,9 @@ import '../models/streak_v2.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/push_service.dart';
+import '../services/sajda_stats_service.dart';
 import '../services/streak_v2_api.dart';
+import '../services/widget_service.dart';
 
 enum StreakLoadPhase { idle, loading, ready, error }
 
@@ -33,7 +35,8 @@ class StreakState extends ChangeNotifier {
   List<GroupSummary> get groups => List.unmodifiable(_groups);
   StreakLoadPhase get groupsPhase => _groupsPhase;
   String? get groupsError => _groupsError;
-  List<GroupSummary> get activeGroups => _groups.where((g) => !g.archived).toList();
+  List<GroupSummary> get activeGroups =>
+      _groups.where((g) => !g.archived).toList();
 
   // ── Notifications (in-app feed; actor never sees own actions) ──
   int _unreadCount = 0;
@@ -171,6 +174,8 @@ class StreakState extends ChangeNotifier {
       _solo = data;
       _soloPhase = StreakLoadPhase.ready;
       _soloError = null;
+      unawaited(WidgetService.saveStreak(_solo));
+      unawaited(SajdaStatsService.instance.syncToday(data.today));
     } on ApiException catch (e) {
       if (e.isAuthError) {
         _authenticated = false;
@@ -230,6 +235,29 @@ class StreakState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Approve/decline a pending join request straight from the bell feed.
+  /// Returns null on success, or a user-facing error message.
+  Future<String?> decideJoinRequest(String requestId, bool approve) async {
+    try {
+      await _withAuthRecovery(
+        () => approve
+            ? _api.approveRequest(requestId)
+            : _api.declineRequest(requestId),
+      );
+      _notifications = _notifications
+          .where((n) => !(n.type == 'join_request' && n.id == requestId))
+          .toList();
+      notifyListeners();
+      unawaited(refreshNotifications());
+      unawaited(refreshGroups(silent: true));
+      return null;
+    } on ApiException catch (e) {
+      return e.isNetworkError ? 'network' : e.toString();
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────
   // THE ONE PRAYER TICK — updates Solo + ALL groups from one response.
   // ─────────────────────────────────────────────────────────────────────
@@ -243,14 +271,28 @@ class StreakState extends ChangeNotifier {
 
     // Optimistic solo state for instant feedback.
     if (_solo != null) {
-      _solo = _solo!.copyWith(today: _solo!.today.withPrayer(prayer, completed));
+      _solo = _solo!.copyWith(
+        today: _solo!.today.withPrayer(prayer, completed),
+      );
       notifyListeners();
+      unawaited(WidgetService.saveStreak(_solo));
     }
 
     try {
-      final result = await _withAuthRecovery(() => _api.completePrayer(prayer, completed: completed));
+      // Send the actual Fajr time (minutes since local midnight) so the
+      // backend grace window uses the real Fajr cutoff, not a fixed 4 AM.
+      final fajrMin = _fajrMinutes();
+      final result = await _withAuthRecovery(
+        () => _api.completePrayer(
+          prayer,
+          completed: completed,
+          fajrMinutes: fajrMin,
+        ),
+      );
       _solo = result.solo;
       notifyListeners();
+      unawaited(WidgetService.saveStreak(_solo));
+      unawaited(SajdaStatsService.instance.syncToday(result.solo.today));
       // Groups were touched by the same tick — refresh their summaries
       // quietly so every group card/dashboard reflects the fan-out.
       unawaited(refreshGroups(silent: true));
@@ -259,9 +301,7 @@ class StreakState extends ChangeNotifier {
     } on ApiException catch (e) {
       // Roll back optimistic state to the last authoritative snapshot.
       await refreshSolo(silent: true);
-      return e.isNetworkError
-          ? 'network'
-          : e.toString();
+      return e.isNetworkError ? 'network' : e.toString();
     } catch (e) {
       await refreshSolo(silent: true);
       return e.toString();
@@ -276,9 +316,29 @@ class StreakState extends ChangeNotifier {
       _solo = data;
       _soloPhase = StreakLoadPhase.ready;
       notifyListeners();
+      unawaited(WidgetService.saveStreak(_solo));
+      unawaited(SajdaStatsService.instance.syncToday(data.today));
       return null;
     } catch (e) {
       return e is ApiException && e.isNetworkError ? 'network' : e.toString();
+    }
+  }
+
+  /// Fajr time as minutes since local midnight, from the cached prayer
+  /// times. Returns null when unavailable (backend falls back to 4 AM).
+  int? _fajrMinutes() {
+    final times = ApiClient.instance.cachedPrayerTimes;
+    if (times == null) return null;
+    try {
+      final fajr = times.prayers.firstWhere((p) => p.name == 'Fajr');
+      final parts = fajr.time.split(':');
+      if (parts.length != 2) return null;
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h == null || m == null) return null;
+      return h * 60 + m;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -322,6 +382,32 @@ class StreakState extends ChangeNotifier {
     }
   }
 
+  Future<String?> renameGroup(String groupId, String name) async {
+    try {
+      await _withAuthRecovery(() => _api.renameGroup(groupId, name));
+      await refreshGroups(silent: true);
+      return null;
+    } on ApiException catch (e) {
+      return e.isNetworkError ? 'network' : e.toString();
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Permanent, owner-only delete (members + history + progress).
+  Future<String?> deleteGroup(String groupId) async {
+    try {
+      await _withAuthRecovery(() => _api.deleteGroup(groupId));
+      await refreshGroups(silent: true);
+      unawaited(refreshNotifications());
+      return null;
+    } on ApiException catch (e) {
+      return e.isNetworkError ? 'network' : e.toString();
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   /// Used after any mutation from a group screen to keep cards in sync.
   Future<void> groupsChanged() => refreshGroups(silent: true);
 
@@ -341,5 +427,7 @@ class StreakState extends ChangeNotifier {
     _authenticated = false;
     _authFailed = false;
     notifyListeners();
+    // Logged out / reset — the home widget must not keep stale streak data.
+    unawaited(WidgetService.saveStreak(null));
   }
 }

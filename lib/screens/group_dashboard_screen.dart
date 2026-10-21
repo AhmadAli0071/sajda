@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../utils/streak_invite_text.dart';
 import '../widgets/streak/group_prayer_circle.dart';
 import '../widgets/streak/streak_components.dart';
+import 'group_challenge_screen.dart';
 import 'group_history_screen.dart';
 import 'group_settings_screen.dart';
 import 'member_detail_screen.dart';
@@ -20,7 +21,11 @@ class GroupDashboardScreen extends StatefulWidget {
   final String groupId;
   final bool justCreated;
 
-  const GroupDashboardScreen({super.key, required this.groupId, this.justCreated = false});
+  const GroupDashboardScreen({
+    super.key,
+    required this.groupId,
+    this.justCreated = false,
+  });
 
   @override
   State<GroupDashboardScreen> createState() => _GroupDashboardScreenState();
@@ -55,13 +60,17 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
           ..clear()
           ..addAll(data.activity);
         _hasMoreActivity = data.activity.length >= 20;
-        _activityCursor = data.activity.isNotEmpty ? data.activity.last.createdAt.toIso8601String() : null;
+        _activityCursor = data.activity.isNotEmpty
+            ? data.activity.last.createdAt.toIso8601String()
+            : null;
         _loading = false;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.isNetworkError ? 'network' : (e.code == 'NOT_MEMBER' ? 'left' : e.message);
+        _error = e.isNetworkError
+            ? 'network'
+            : (e.code == 'NOT_MEMBER' ? 'left' : e.message);
         _loading = false;
       });
     } catch (e) {
@@ -74,7 +83,9 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
   }
 
   Future<void> _loadMoreActivity() async {
-    if (_activityLoadingMore || !_hasMoreActivity || _activityCursor == null) return;
+    if (_activityLoadingMore || !_hasMoreActivity || _activityCursor == null) {
+      return;
+    }
     setState(() => _activityLoadingMore = true);
     try {
       final page = await StreakV2Api.instance.getGroupActivity(
@@ -115,11 +126,15 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: isDark
+          ? AppColors.darkBackground
+          : AppColors.lightBackground,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(color: isDark ? AppColors.darkText : AppColors.lightText),
+        iconTheme: IconThemeData(
+          color: isDark ? AppColors.darkText : AppColors.lightText,
+        ),
         title: Text(
           _data?.group.name ?? app.t('Group', 'گروپ'),
           style: TextStyle(
@@ -134,10 +149,12 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
               tooltip: app.t('History', 'تاریخ'),
               icon: const Icon(Icons.calendar_month_rounded),
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => GroupHistoryScreen(group: _data!.group)),
+                MaterialPageRoute(
+                  builder: (_) => GroupHistoryScreen(group: _data!.group),
+                ),
               ),
             ),
-          if (_data != null && (_data!.group.myRole == 'owner' || _data!.group.myRole == 'admin'))
+          if (_data != null)
             IconButton(
               tooltip: app.t('Settings', 'ترتیبات'),
               icon: const Icon(Icons.settings_outlined),
@@ -158,47 +175,65 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
       body: _loading && _data == null
           ? const LoadingList()
           : _error != null
-              ? ListView(
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    if (_error == 'left')
-                      EmptyStateCard(
-                        icon: Icons.logout_rounded,
-                        title: app.t('You\u2019re no longer in this group', 'آپ اب اس گروپ میں نہیں'),
-                        subtitle: app.t('The group may have archived or you were removed.', 'گروپ آرکائیو ہو گیا یا آپ ہٹا دیے گئے۔'),
-                      )
-                    else
-                      ErrorCard(
-                        message: _error == 'network'
-                            ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
-                            : _error!,
-                        onRetry: _load,
-                      ),
-                  ],
-                )
-              : RefreshIndicator(
-                  color: AppColors.primary,
-                  onRefresh: _load,
-                  child: _buildBody(app, isDark),
-                ),
+          ? ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                if (_error == 'left')
+                  EmptyStateCard(
+                    icon: Icons.logout_rounded,
+                    title: app.t(
+                      'You\u2019re no longer in this group',
+                      'آپ اب اس گروپ میں نہیں',
+                    ),
+                    subtitle: app.t(
+                      'The group may have archived or you were removed.',
+                      'گروپ آرکائیو ہو گیا یا آپ ہٹا دیے گئے۔',
+                    ),
+                  )
+                else
+                  ErrorCard(
+                    message: _error == 'network'
+                        ? app.t(
+                            'No connection. Check your internet.',
+                            'انٹرنیٹ نہیں چل رہا۔',
+                          )
+                        : _error!,
+                    onRetry: _load,
+                  ),
+              ],
+            )
+          : RefreshIndicator(
+              color: AppColors.primary,
+              onRefresh: _load,
+              child: _buildBody(app, isDark),
+            ),
     );
   }
 
   Widget _buildBody(AppState app, bool isDark) {
     final d = _data!;
     final g = d.group;
-    final me = d.members.where((m) => m.isMe).toList().cast<MemberProgress?>().firstOrNull ??
-        MemberProgress(userId: '', displayName: '', role: g.myRole, eligible: true, completedCount: 0, isMe: true);
+    final me =
+        d.members
+            .where((m) => m.isMe)
+            .toList()
+            .cast<MemberProgress?>()
+            .firstOrNull ??
+        MemberProgress(
+          userId: '',
+          displayName: '',
+          role: g.myRole,
+          eligible: true,
+          completedCount: 0,
+          isMe: true,
+        );
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
         if (widget.justCreated) ...[
-          _JustCreatedBanner(
-            dark: isDark,
-            onShare: () => _shareInvite(app, g),
-          ),
+          _JustCreatedBanner(dark: isDark, onShare: () => _shareInvite(app, g)),
           const SizedBox(height: 14),
         ],
         StreakHero(
@@ -236,8 +271,8 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
               color: d.isGroupDayComplete
                   ? AppColors.success.withValues(alpha: 0.4)
                   : isDark
-                      ? AppColors.darkSurfaceAlt
-                      : AppColors.lightBorder,
+                  ? AppColors.darkSurfaceAlt
+                  : AppColors.lightBorder,
             ),
           ),
           child: Column(
@@ -248,7 +283,7 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
                 needed: d.needed,
                 dayComplete: d.isGroupDayComplete,
               ),
-              if (!me.isRequiredToday) ...[
+              if (!me.isRequiredToday && !me.excludedInactive) ...[
                 const SizedBox(height: 12),
                 Text(
                   app.t(
@@ -257,12 +292,23 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
                   ),
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                    color: isDark
+                        ? AppColors.darkMuted
+                        : AppColors.lightSecondaryText,
                   ),
                 ),
               ],
             ],
           ),
+        ),
+        const SizedBox(height: 12),
+
+        // Weekly challenge + leaderboard (F9).
+        _ChallengeEntryCard(
+          app: app,
+          isDark: isDark,
+          group: g,
+          members: d.members,
         ),
         const SizedBox(height: 20),
 
@@ -285,7 +331,10 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
                   onPressed: () async {
                     final streakState = context.read<StreakState>();
                     await Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => GroupSettingsScreen(group: g, initialTab: 1)),
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            GroupSettingsScreen(group: g, initialTab: 1),
+                      ),
                     );
                     if (!mounted) return;
                     _load();
@@ -300,21 +349,28 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkSurface : AppColors.lightCard,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+            border: Border.all(
+              color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+            ),
           ),
           child: Column(
             children: d.members
-                .map((m) => MemberProgressRow(
-                      member: m,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => MemberDetailScreen(groupId: widget.groupId, member: m),
+                .map(
+                  (m) => MemberProgressRow(
+                    member: m,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MemberDetailScreen(
+                          groupId: widget.groupId,
+                          member: m,
                         ),
                       ),
-                      onLongPress: g.myRole == 'owner' && !m.isMe
-                          ? () => _showMemberActions(app, isDark, m)
-                          : null,
-                    ))
+                    ),
+                    onLongPress: g.myRole == 'owner' && !m.isMe
+                        ? () => _showMemberActions(app, isDark, m)
+                        : null,
+                  ),
+                )
                 .toList(),
           ),
         ),
@@ -326,7 +382,10 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
           EmptyStateCard(
             icon: Icons.notifications_none_rounded,
             title: app.t('No activity yet', 'ابھی کوئی سرگرمی نہیں'),
-            subtitle: app.t('Group events will show up here.', 'گروپ کی خبریں یہاں آئیں گی۔'),
+            subtitle: app.t(
+              'Group events will show up here.',
+              'گروپ کی خبریں یہاں آئیں گی۔',
+            ),
           )
         else
           Container(
@@ -334,7 +393,11 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkSurface : AppColors.lightCard,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+              border: Border.all(
+                color: isDark
+                    ? AppColors.darkSurfaceAlt
+                    : AppColors.lightBorder,
+              ),
             ),
             child: Column(
               children: [
@@ -343,7 +406,11 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
                   TextButton(
                     onPressed: _loadMoreActivity,
                     child: _activityLoadingMore
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : Text(app.t('Load more', 'مزید')),
                   ),
               ],
@@ -357,7 +424,9 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -373,7 +442,10 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
             ),
             const SizedBox(height: 8),
             ListTile(
-              leading: const Icon(Icons.workspace_premium_rounded, color: AppColors.primary),
+              leading: const Icon(
+                Icons.workspace_premium_rounded,
+                color: AppColors.primary,
+              ),
               title: Text(app.t('Make owner', 'مالک بنائیں')),
               onTap: () async {
                 Navigator.of(ctx).pop();
@@ -381,9 +453,14 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.person_remove_outlined, color: AppColors.danger),
-              title: Text(app.t('Remove from group', 'گروپ سے نکالیں'),
-                  style: const TextStyle(color: AppColors.danger)),
+              leading: const Icon(
+                Icons.person_remove_outlined,
+                color: AppColors.danger,
+              ),
+              title: Text(
+                app.t('Remove from group', 'گروپ سے نکالیں'),
+                style: const TextStyle(color: AppColors.danger),
+              ),
               onTap: () async {
                 Navigator.of(ctx).pop();
                 await _remove(app, m);
@@ -400,21 +477,32 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
     try {
       await StreakV2Api.instance.transferOwnership(widget.groupId, m.userId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(app.t('Ownership transferred', 'ملکیت منتقل ہو گئی')),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(app.t('Ownership transferred', 'ملکیت منتقل ہو گئی')),
+        ),
+      );
       _load();
       context.read<StreakState>().groupsChanged();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e.isNetworkError
-            ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
-            : e.message),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.isNetworkError
+                ? app.t(
+                    'No connection. Check your internet.',
+                    'انٹرنیٹ نہیں چل رہا۔',
+                  )
+                : e.message,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -426,14 +514,23 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
       context.read<StreakState>().groupsChanged();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e.isNetworkError
-            ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
-            : e.message),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.isNetworkError
+                ? app.t(
+                    'No connection. Check your internet.',
+                    'انٹرنیٹ نہیں چل رہا۔',
+                  )
+                : e.message,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -453,7 +550,8 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
           Navigator.of(ctx).pop();
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => MemberDetailScreen(groupId: widget.groupId, member: m),
+              builder: (_) =>
+                  MemberDetailScreen(groupId: widget.groupId, member: m),
             ),
           );
         },
@@ -465,22 +563,32 @@ class _GroupDashboardScreenState extends State<GroupDashboardScreen> {
     try {
       await StreakV2Api.instance.nudgeMember(widget.groupId, m.userId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(app.t('Reminder sent', 'یاد دہانی بھیج دی گئی')),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(app.t('Reminder sent', 'یاد دہانی بھیج دی گئی')),
+        ),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       final msg = e.code == 'NUDGE_DUPLICATE'
-          ? app.t('Already nudged — try another prayer or tomorrow', 'پہلے ہی یاد دہانی بھیجی — کل دوبارہ کوشش کریں')
+          ? app.t(
+              'Already nudged today — try again tomorrow',
+              'آج یاد دہانی بھیج دی — کل دوبارہ بھیجیں',
+            )
           : e.code == 'NUDGE_LIMIT'
-              ? app.t('They got enough reminders for today', 'آج کے لیے کافی یاد دہانیاں بھیج چکیں')
-              : e.isNetworkError
-                  ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
-                  : e.message;
+          ? app.t(
+              'They got enough reminders for today',
+              'آج کے لیے کافی یاد دہانیاں بھیج چکیں',
+            )
+          : e.isNetworkError
+          ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
+          : e.message;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 }
@@ -509,7 +617,10 @@ class _JustCreatedBanner extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  app.t('Group created! Share the code to invite.', 'گروپ بن گیا! کوڈ شیئر کریں۔'),
+                  app.t(
+                    'Group created! Share the code to invite.',
+                    'گروپ بن گیا! کوڈ شیئر کریں۔',
+                  ),
                   style: const TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w700,
@@ -529,7 +640,9 @@ class _JustCreatedBanner extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: AppColors.primaryDeep,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
@@ -574,7 +687,9 @@ class _InviteCodeCard extends StatelessWidget {
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.6,
-                    color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                    color: dark
+                        ? AppColors.darkMuted
+                        : AppColors.lightSecondaryText,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -594,7 +709,8 @@ class _InviteCodeCard extends StatelessWidget {
             tooltip: app.t('Copy', 'کاپی'),
             onPressed: () {
               if (code.isEmpty) return;
-              final inviter = (app.displayName != null && app.displayName!.isNotEmpty)
+              final inviter =
+                  (app.displayName != null && app.displayName!.isNotEmpty)
                   ? app.displayName!
                   : app.t('A friend', 'ایک دوست');
               final text = buildStreakInviteShareText(
@@ -617,7 +733,9 @@ class _InviteCodeCard extends StatelessWidget {
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           ),
         ],
@@ -647,7 +765,9 @@ class _ShieldChip extends StatelessWidget {
         Icon(
           Icons.shield_rounded,
           size: 16,
-          color: savedToday ? AppColors.primary : AppColors.primary.withValues(alpha: 0.6),
+          color: savedToday
+              ? AppColors.primary
+              : AppColors.primary.withValues(alpha: 0.6),
         ),
         const SizedBox(width: 6),
         Text(
@@ -685,7 +805,9 @@ class _MemberSheetBody extends StatelessWidget {
     final app = context.watch<AppState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final you = app.t('You', 'آپ');
-    final name = member.isMe ? '$you · ${member.displayName}' : member.displayName;
+    final name = member.isMe
+        ? '$you · ${member.displayName}'
+        : member.displayName;
 
     return SafeArea(
       child: Padding(
@@ -697,7 +819,9 @@ class _MemberSheetBody extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+                color: isDark
+                    ? AppColors.darkSurfaceAlt
+                    : AppColors.lightBorder,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -719,7 +843,10 @@ class _MemberSheetBody extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  app.t('Inactive — not blocking the group', 'غیر فعال — گروپ نہیں روک رہا'),
+                  app.t(
+                    'Inactive — not blocking the group',
+                    'غیر فعال — گروپ نہیں روک رہا',
+                  ),
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -733,7 +860,9 @@ class _MemberSheetBody extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBackground,
+                color: isDark
+                    ? AppColors.darkSurfaceAlt
+                    : AppColors.lightBackground,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -741,7 +870,10 @@ class _MemberSheetBody extends StatelessWidget {
                   final done = member.prayerDone(p);
                   final label = switch (p) {
                     'fajr' => app.t('Fajr', 'فجر'),
-                    'dhuhr' => app.t('Dhuhr', 'ظہر'),
+                    'dhuhr' =>
+                      (DateTime.now().weekday == DateTime.friday)
+                          ? app.t('Friday', 'جمعہ')
+                          : app.t('Dhuhr', 'ظہر'),
                     'asr' => app.t('Asr', 'عصر'),
                     'maghrib' => app.t('Maghrib', 'مغرب'),
                     _ => app.t('Isha', 'عشاء'),
@@ -756,14 +888,20 @@ class _MemberSheetBody extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: isDark ? AppColors.darkText : AppColors.lightText,
+                              color: isDark
+                                  ? AppColors.darkText
+                                  : AppColors.lightText,
                             ),
                           ),
                         ),
                         Icon(
-                          done ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                          done
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
                           size: 20,
-                          color: done ? AppColors.success : AppColors.lightMutedText,
+                          color: done
+                              ? AppColors.success
+                              : AppColors.lightMutedText,
                         ),
                       ],
                     ),
@@ -780,10 +918,18 @@ class _MemberSheetBody extends StatelessWidget {
                     icon: const Icon(Icons.person_outline_rounded, size: 18),
                     label: Text(app.t('View profile', 'پروفائل دیکھیں')),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: isDark ? AppColors.darkText : AppColors.lightText,
-                      side: BorderSide(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+                      foregroundColor: isDark
+                          ? AppColors.darkText
+                          : AppColors.lightText,
+                      side: BorderSide(
+                        color: isDark
+                            ? AppColors.darkSurfaceAlt
+                            : AppColors.lightBorder,
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -792,18 +938,117 @@ class _MemberSheetBody extends StatelessWidget {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: onNudge,
-                      icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                      icon: const Icon(
+                        Icons.notifications_active_outlined,
+                        size: 18,
+                      ),
                       label: Text(app.t('Nudge', 'یاد دہانی')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
                 ],
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChallengeEntryCard extends StatelessWidget {
+  final AppState app;
+  final bool isDark;
+  final GroupDetail group;
+  final List<MemberProgress> members;
+
+  const _ChallengeEntryCard({
+    required this.app,
+    required this.isDark,
+    required this.group,
+    required this.members,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              GroupChallengeScreen(group: group, initialMembers: members),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF4A3B00), const Color(0xFF8A6400)]
+                : [const Color(0xFFFFF6DA), const Color(0xFFFFE9B0)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(
+            color: const Color(0xFFD4A937).withValues(alpha: 0.4),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD4A937).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.flag_rounded,
+                color: isDark
+                    ? const Color(0xFFFFE082)
+                    : const Color(0xFF8A6400),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    app.t('Weekly Challenge', 'ہفتہ وار چیلنج'),
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : const Color(0xFF4A3B00),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    app.t(
+                      'Complete all 7 days together — see the leaderboard',
+                      'ساتوں دن مل کر مکمل کریں — لیڈر بورڈ دیکھیں',
+                    ),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark
+                          ? const Color(0xFFFFE082).withValues(alpha: 0.75)
+                          : const Color(0xFF8A6400),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: isDark ? const Color(0xFFFFE082) : const Color(0xFF8A6400),
             ),
           ],
         ),

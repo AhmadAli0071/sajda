@@ -1,4 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
@@ -8,6 +12,8 @@ import '../state/app_state.dart';
 import '../services/hijri_date_service.dart';
 import '../services/auth_service.dart';
 import '../services/date_service.dart';
+import '../services/local_prayer_times_service.dart';
+import '../services/widget_service.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -51,6 +57,17 @@ class ApiClient {
     _prayerTimesCacheTime = null;
     _prayerTimesCacheKey = null;
   }
+
+  /// Test-only: seed the prayer-times cache so widget tests can exercise
+  /// screen refreshes (e.g. app resume) without any network.
+  @visibleForTesting
+  void primePrayerTimesCache(PrayerTimesResponse times,
+      {required String cacheKey}) {
+    _cachedPrayerTimes = times;
+    _prayerTimesCacheTime = DateTime.now();
+    _prayerTimesCacheKey = cacheKey;
+  }
+
 
   Map<String, String> _headers() {
     final headers = <String, String>{'Content-Type': 'application/json'};
@@ -120,17 +137,91 @@ class ApiClient {
 
   // ---------- Prayer ----------
 
-  Future<PrayerTimesResponse> getPrayerTimes(String city, String country, {int method = 3, int school = 1}) async {
-    final json = await _get('/prayers/times?city=${Uri.encodeQueryComponent(city)}&country=${Uri.encodeQueryComponent(country)}&method=$method&school=$school');
+  /// Backend `/prayers/times` path. The date travels in the URL as
+  /// YYYY-MM-DD (the backend converts it to AlAdhan's DD-MM-YYYY itself,
+  /// see prayerService.js) so the server-side cache — keyed by request URL
+  /// — gets one entry per day instead of serving yesterday's times across
+  /// midnight. [method]/[school] are always the caller's resolved settings
+  /// (manual choice wins over country auto-detect).
+  @visibleForTesting
+  static String prayerTimesPath({
+    required String city,
+    required String country,
+    required String date,
+    required int method,
+    required int school,
+  }) =>
+      '/prayers/times?city=${Uri.encodeQueryComponent(city)}'
+      '&country=${Uri.encodeQueryComponent(country)}&date=$date'
+      '&method=$method&school=$school';
+
+  /// AlAdhan's `/timings/{date}` path expects DD-MM-YYYY while the app
+  /// stores YYYY-MM-DD. Sending YYYY-MM-DD makes AlAdhan silently misread
+  /// the YEAR (e.g. 2026-10-09 -> 09 Oct 2009), which applies outdated DST
+  /// rules and throws every prayer off by an hour.
+  @visibleForTesting
+  static String aladhanDateFromYmd(String dateStr) {
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(dateStr);
+    if (m == null) return dateStr;
+    return '${m[3]}-${m[2]}-${m[1]}';
+  }
+
+  /// Prayer-times cache key. Only the exact inputs the times were built
+  /// with may be served from cache — coordinates, city, country, timezone,
+  /// civil date, method and school each get their own entry.
+  @visibleForTesting
+  static String prayerCacheKey({
+    required double lat,
+    required double lng,
+    required String city,
+    required String country,
+    required String timezone,
+    required String date,
+    required int method,
+    required int school,
+  }) =>
+      '$lat|$lng|$city|$country|$timezone|$date|$method|$school';
+
+  /// The failures the direct AlAdhan call may reasonably hit: HTTP/API
+  /// errors, timeout, transport errors. Anything else (JSON shape errors,
+  /// other programming errors) is NOT a route failure and must reach the
+  /// caller instead of silently switching routes.
+  static bool _isAladhanRouteFailure(Object e) =>
+      e is ApiException ||
+      e is TimeoutException ||
+      e is http.ClientException ||
+      e is IOException;
+
+  /// Sanitized reason for logs. Never the request URL/exception text —
+  /// those embed the user's coordinates and timezone.
+  static String _routeFailureReason(Object e) {
+    if (e is ApiException) return e.message;
+    if (e is TimeoutException) return 'timed out';
+    return e.runtimeType.toString();
+  }
+
+  Future<PrayerTimesResponse> getPrayerTimes(String city, String country,
+      {required String date, required int method, required int school}) async {
+    final json = await _get(prayerTimesPath(
+        city: city,
+        country: country,
+        date: date,
+        method: method,
+        school: school));
     return PrayerTimesResponse.fromJson(json['data'] as Map<String, dynamic>);
   }
 
   Future<PrayerTimesResponse> getPrayerTimesForDate(
-      String city, String country, DateTime date, {int method = 3, int school = 1}) async {
+      String city, String country, DateTime date,
+      {required int method, required int school}) async {
     final d =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    final json = await _get(
-        '/prayers/times?city=${Uri.encodeQueryComponent(city)}&country=${Uri.encodeQueryComponent(country)}&date=$d&method=$method&school=$school');
+    final json = await _get(prayerTimesPath(
+        city: city,
+        country: country,
+        date: d,
+        method: method,
+        school: school));
     return PrayerTimesResponse.fromJson(json['data'] as Map<String, dynamic>);
   }
 
@@ -152,41 +243,78 @@ class ApiClient {
 
     // Cache is only valid for the exact inputs it was built with — a
     // location/method/school change or a new day must refetch.
-    final cacheKey = '$lat|$lng|$city|$country|$timezone|$dateStr|$method|$school';
+    final cacheKey = prayerCacheKey(
+        lat: lat,
+        lng: lng,
+        city: city,
+        country: country,
+        timezone: timezone,
+        date: dateStr,
+        method: method,
+        school: school);
     if (useCache && _prayerTimesCacheKey == cacheKey) {
       final cached = cachedPrayerTimes;
       if (cached != null) return cached;
     }
 
+    // non-final: Dart's flow analysis can't prove a `final` is assigned at
+    // most once across the try/catch fallback below.
+    // ignore: prefer_final_locals
     PrayerTimesResponse result;
     if (lat != 0.0 && lng != 0.0) {
-      try {
-        result = await _getAladhanPrayerTimes(lat, lng, timezone, dateStr, method, school);
-      } catch (_) {
-        result = await getPrayerTimes(city, country, method: method, school: school);
+      // Local first: `adhan` computes offline in-process — zero network,
+      // zero server load, and correct even without connectivity (F3).
+      final local = LocalPrayerTimesService.calculate(
+        lat: lat,
+        lng: lng,
+        timezone: timezone,
+        // The location's civil day (never the device's date fields): near
+        // midnight the device can already be on tomorrow while [dateStr]
+        // — and every other route below — is still today.
+        date: DateTime.parse(dateStr),
+        method: method,
+        school: school,
+      );
+      if (local != null) {
+        debugPrint('PrayerTimes: route=local (adhan)');
+        result = local;
+      } else {
+        // Coordinates rejected by the local calculator (should be rare) —
+        // keep the old network paths as a safety net.
+        try {
+          result = await _getAladhanPrayerTimes(lat, lng, timezone, dateStr, method, school);
+          debugPrint('PrayerTimes: route=aladhan-direct');
+        } catch (e) {
+          if (!_isAladhanRouteFailure(e)) rethrow;
+          debugPrint(
+              'PrayerTimes: aladhan-direct failed (${_routeFailureReason(e)}) -> route=backend-city');
+          result = await getPrayerTimes(city, country,
+              date: dateStr, method: method, school: school);
+        }
       }
     } else {
-      result = await getPrayerTimes(city, country, method: method, school: school);
+      debugPrint('PrayerTimes: route=backend-city (no coordinates)');
+      result = await getPrayerTimes(city, country,
+          date: dateStr, method: method, school: school);
     }
     _cachedPrayerTimes = result;
     _prayerTimesCacheTime = DateTime.now();
     _prayerTimesCacheKey = cacheKey;
+    // Home screen widget (F2): keep the widget's copy of today's times in
+    // sync whenever fresh times land (fire-and-forget, fully guarded).
+    unawaited(WidgetService.savePrayerTimes(result, city: state.displayCityName));
     return result;
   }
 
   Future<PrayerTimesResponse> _getAladhanPrayerTimes(
       double lat, double lng, String timezone, String dateStr, int method, int school) async {
-    // AlAdhan's /timings/{date} path expects DD-MM-YYYY. We store dates as
-    // YYYY-MM-DD everywhere else, so convert here — sending YYYY-MM-DD makes
-    // AlAdhan silently misread the YEAR (e.g. 2026-10-09 -> 09 Oct 2009),
-    // which applies outdated DST rules and throws every prayer off by an hour.
     final dateParts = dateStr.split('-');
-    final aladhanDate = dateParts.length == 3
-        ? '${dateParts[2]}-${dateParts[1]}-${dateParts[0]}'
-        : dateStr;
+    final aladhanDate = aladhanDateFromYmd(dateStr);
     final uri = Uri.parse(
         'https://api.aladhan.com/v1/timings/$aladhanDate?latitude=$lat&longitude=$lng&timezone=${Uri.encodeQueryComponent(timezone)}&method=$method&school=$school');
-    final res = await http.get(uri, headers: {'User-Agent': 'SajdaDataplus/1.0'});
+    final res = await http
+        .get(uri, headers: {'User-Agent': 'SajdaDataplus/1.0'})
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode >= 400) throw ApiException('AlAdhan HTTP ${res.statusCode}');
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     if (json['code'] != 200) throw ApiException('AlAdhan API error');
@@ -226,27 +354,41 @@ class ApiClient {
     final lng = state.lng ?? 0.0;
     final timezone = state.locationTimezone;
     final date = DateTime.now();
-    final dateStr =
-        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    // Same rule as getPrayerTimesFor: the location's civil day, never the
+    // device's date fields (they can already be tomorrow near midnight).
+    final dateStr = dateService.formatDateAsYYYYMMDD(date: date, timezone: timezone);
     final method = state.prayerMethod;
     final school = state.asrSchool;
 
     if (lat != 0.0 && lng != 0.0) {
+      // Local first (F3): on-device `adhan` calculation, zero network.
+      final local = LocalPrayerTimesService.calculate(
+        lat: lat,
+        lng: lng,
+        timezone: timezone,
+        date: DateTime.parse(dateStr),
+        method: method,
+        school: school,
+      );
+      if (local != null) return _buildNextPrayer(local, timezone);
+
       try {
         final uri = Uri.parse(
-            'https://api.aladhan.com/v1/timings/$dateStr?latitude=$lat&longitude=$lng&timezone=${Uri.encodeQueryComponent(timezone)}&method=$method&school=$school');
-    final res = await http.get(uri, headers: {'User-Agent': 'SajdaDataplus/1.0'});
+            'https://api.aladhan.com/v1/timings/${aladhanDateFromYmd(dateStr)}?latitude=$lat&longitude=$lng&timezone=${Uri.encodeQueryComponent(timezone)}&method=$method&school=$school');
+        final res = await http
+            .get(uri, headers: {'User-Agent': 'SajdaDataplus/1.0'})
+            .timeout(const Duration(seconds: 15));
         if (res.statusCode >= 400) throw ApiException('AlAdhan HTTP ${res.statusCode}');
         final json = jsonDecode(res.body) as Map<String, dynamic>;
         if (json['code'] != 200) throw ApiException('AlAdhan API error');
         final timings = json['data']['timings'] as Map<String, dynamic>;
         final prayers = <PrayerTime>[];
         for (final name in ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']) {
-          final time = timings[name]?.toString() ?? '';
+          final time = (timings[name]?.toString() ?? '').replaceAll(RegExp(r'\s*\(.*\)'), '');
           if (time.isNotEmpty) prayers.add(PrayerTime(name, time));
         }
 
-        final gregorianDate = DateTime.now();
+        final gregorianDate = DateTime.parse(dateStr);
         final hijriInfo = HijriDateService.getHijriDate(gregorianDate);
 
         final hijriInfoModel = HijriInfo(
@@ -258,50 +400,69 @@ class ApiClient {
           fullAr: hijriInfo.fullAr,
           monthNumber: hijriInfo.month,
         );
-        final currentTimeHm = dateService.nowHmInTimezone(timezone);
-        final currentTime = '${currentTimeHm.$1.toString().padLeft(2, '0')}:${currentTimeHm.$2.toString().padLeft(2, '0')}';
-        // "Now" must be evaluated in the SAME timezone the prayer times
-        // are expressed in — never the device's local clock.
-        final currentMinutes = currentTimeHm.$1 * 60 + currentTimeHm.$2;
-        final prayerTimes = prayers.map((p) {
-          final parts = p.time.split(':');
-          if (parts.length == 2) {
-            return {'name': p.name, 'time': p.time, 'totalMinutes': int.parse(parts[0]) * 60 + int.parse(parts[1])};
-          }
-          return null;
-        }).whereType<Map<String, dynamic>>().toList();
-        
-        final nextPrayers = prayerTimes.where((p) => (p['totalMinutes'] as int) > currentMinutes).toList();
-        
-        Map<String, dynamic> next;
-        if (nextPrayers.isEmpty) {
-          next = prayerTimes.firstWhere((p) => p['name'] == 'Fajr');
-          next['isTomorrow'] = true;
-        } else {
-          next = nextPrayers.first;
-          next['isTomorrow'] = false;
-        }
-        
-        return NextPrayerResponse(
-          currentTime: currentTime,
-          name: next['name'],
-          time: next['time'],
-          totalMinutes: next['totalMinutes'],
-          isTomorrow: next['isTomorrow'],
-          countdown: next['isTomorrow'] 
-              ? ((24 * 60 - currentMinutes) + (next['totalMinutes'] as int)) * 60
-              : ((next['totalMinutes'] as int) - currentMinutes) * 60,
-          allPrayers: prayers,
-          hijri: hijriInfoModel,
+        return _buildNextPrayer(
+          PrayerTimesResponse(prayers: prayers, date: dateStr, hijri: hijriInfoModel),
+          timezone,
         );
-      } catch (_) {
-        // Fallback to backend
+      } catch (e) {
+        if (!_isAladhanRouteFailure(e)) rethrow;
+        debugPrint(
+            'PrayerTimes: aladhan-direct failed (${_routeFailureReason(e)}) -> route=backend-city (next-prayer)');
       }
     }
     final city = state.prayerCityParam;
     final country = state.prayerCountryParam;
     final json = await _get('/prayers/next-prayer?city=${Uri.encodeQueryComponent(city)}&country=${Uri.encodeQueryComponent(country)}');
     return NextPrayerResponse.fromJson(json['data'] as Map<String, dynamic>);
+  }
+
+  /// Derives the current/next prayer from [response] evaluated in the
+  /// SAME timezone the prayer times are expressed in — never the device
+  /// clock (device TZ can differ from the selected location while travel).
+  NextPrayerResponse _buildNextPrayer(PrayerTimesResponse response, String timezone) {
+    final prayers = response.prayers;
+    final currentTimeHm = dateService.nowHmInTimezone(timezone);
+    final currentTime =
+        '${currentTimeHm.$1.toString().padLeft(2, '0')}:${currentTimeHm.$2.toString().padLeft(2, '0')}';
+    final currentMinutes = currentTimeHm.$1 * 60 + currentTimeHm.$2;
+    final prayerTimes = prayers.map((p) {
+      final clean = p.time.replaceAll(RegExp(r'\s*\(.*\)'), '');
+      final parts = clean.split(':');
+      final h = parts.length >= 2 ? int.tryParse(parts[0]) : null;
+      final m = parts.length >= 2 ? int.tryParse(parts[1]) : null;
+      if (h == null || m == null) return null;
+      return {
+        'name': p.name,
+        'time': clean,
+        'totalMinutes': h * 60 + m,
+      };
+    }).whereType<Map<String, dynamic>>().toList();
+
+    final nextPrayers =
+        prayerTimes.where((p) => (p['totalMinutes'] as int) > currentMinutes).toList();
+
+    Map<String, dynamic> next;
+    bool isTomorrow;
+    if (nextPrayers.isEmpty) {
+      next = prayerTimes.firstWhere((p) => p['name'] == 'Fajr');
+      isTomorrow = true;
+    } else {
+      next = nextPrayers.first;
+      isTomorrow = false;
+    }
+
+    return NextPrayerResponse(
+      currentTime: currentTime,
+      name: next['name'] as String,
+      time: next['time'] as String,
+      totalMinutes: next['totalMinutes'] as int,
+      isTomorrow: isTomorrow,
+      countdown: isTomorrow
+          ? ((24 * 60 - currentMinutes) + (next['totalMinutes'] as int)) * 60
+          : ((next['totalMinutes'] as int) - currentMinutes) * 60,
+      allPrayers: prayers,
+      hijri: response.hijri,
+    );
   }
 
   Future<QiblaResponse> getQibla(double lat, double lng) async {

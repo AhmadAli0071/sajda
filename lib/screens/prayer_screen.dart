@@ -21,7 +21,7 @@ class PrayerScreen extends StatefulWidget {
   State<PrayerScreen> createState() => _PrayerScreenState();
 }
 
-class _PrayerScreenState extends State<PrayerScreen> {
+class _PrayerScreenState extends State<PrayerScreen> with WidgetsBindingObserver {
   PrayerTimesResponse? _times;
   QiblaResponse? _qibla;
   bool _loading = true;
@@ -30,10 +30,40 @@ class _PrayerScreenState extends State<PrayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // This screen holds `_times` in its own state (the home timer and
+    // MainShell's resume hook don't rebuild it), so a process that slept
+    // past midnight would keep showing yesterday's times. Quiet refresh:
+    // no spinner, and a failed refetch keeps what's already on screen.
+    if (state == AppLifecycleState.resumed) _load(quiet: true);
+  }
+
+  Future<void> _load({bool quiet = false}) async {
+    if (quiet) {
+      try {
+        final times =
+            await ApiClient.instance.getPrayerTimesFor(context.read<AppState>());
+        if (!mounted) return;
+        setState(() {
+          _times = times;
+          _error = null;
+        });
+      } catch (_) {
+        // Background refresh failed — keep the times already on screen.
+      }
+      return;
+    }
     final state = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -215,10 +245,10 @@ class _PrayerScreenState extends State<PrayerScreen> {
                               style: const TextStyle(color: Colors.white70, fontSize: 12),
                             ),
                             Text(
-                              state.isUrdu
-                                  ? (AppStrings.prayerNames[times.prayers[_nextPrayerIndex(times)!].name] ??
-                                      times.prayers[_nextPrayerIndex(times)!].name)
-                                  : times.prayers[_nextPrayerIndex(times)!].name,
+                              AppStrings.prayerDisplayName(
+                                times.prayers[_nextPrayerIndex(times)!].name,
+                                isUrdu: state.isUrdu,
+                              ),
                               style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
                             ),
                           ],
@@ -266,9 +296,7 @@ class _PrayerScreenState extends State<PrayerScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                state.isUrdu
-                                    ? (AppStrings.prayerNames[p.name] ?? p.name)
-                                    : p.name,
+                                AppStrings.prayerDisplayName(p.name, isUrdu: state.isUrdu),
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                               if (isNext)

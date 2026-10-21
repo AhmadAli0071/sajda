@@ -4,8 +4,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../screens/daily_zikr_screen.dart';
 import '../screens/group_dashboard_screen.dart';
 import '../screens/group_settings_screen.dart';
+import '../screens/ramadan_screen.dart';
+import 'api_client.dart';
 import 'streak_v2_api.dart';
 
 /// The ONE place every notification tap lands — local plugin taps, FCM
@@ -147,6 +150,12 @@ class NotificationRouter {
       case 'join_decided':
         _routeGroup(data);
         break;
+      case 'daily_reminder':
+        _push((_) => const DailyZikrScreen());
+        break;
+      case 'ramadan_iftar':
+        _push((_) => const RamadanScreen());
+        break;
     }
   }
 
@@ -182,8 +191,30 @@ class NotificationRouter {
     final prayer = data['prayer'] as String?;
     if (prayer == null || prayer.isEmpty) return;
     try {
-      await StreakV2Api.instance.completePrayer(prayer);
+      // Include the actual Fajr time so the backend grace window is accurate.
+      final fajrMin = _fajrMinutesFromCache();
+      await StreakV2Api.instance.completePrayer(
+        prayer.toLowerCase(),
+        fajrMinutes: fajrMin,
+      );
     } catch (_) {}
+  }
+
+  /// Fajr minutes-since-midnight from the cached prayer times (or null).
+  static int? _fajrMinutesFromCache() {
+    final times = ApiClient.instance.cachedPrayerTimes;
+    if (times == null) return null;
+    try {
+      final fajr = times.prayers.firstWhere((p) => p.name == 'Fajr');
+      final parts = fajr.time.split(':');
+      if (parts.length != 2) return null;
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h == null || m == null) return null;
+      return h * 60 + m;
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── Navigation helpers ──

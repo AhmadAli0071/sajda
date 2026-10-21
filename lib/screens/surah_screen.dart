@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../services/background_audio_permissions.dart';
 import '../services/quran_service.dart';
 import '../services/quran_translation_provider.dart';
 import '../services/tafsir_provider.dart';
@@ -129,18 +130,22 @@ class _SurahScreenState extends State<SurahScreen> {
     }
   }
 
-  void _playSurah() {
+  Future<void> _playSurah() async {
     final audio = context.read<AudioPlayerState>();
     if (audio.isPlayingSurah(_surah.number)) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const AudioPlayerScreen()),
       );
     } else {
+      await ensureBackgroundAudioReady(context);
+      if (!mounted) return;
       audio.playSurah(_surah);
     }
   }
 
-  void _playFromAyah(int ayah) {
+  Future<void> _playFromAyah(int ayah) async {
+    await ensureBackgroundAudioReady(context);
+    if (!mounted) return;
     context.read<AudioPlayerState>().playSurah(_surah, fromAyah: ayah);
   }
 

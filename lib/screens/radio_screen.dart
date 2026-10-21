@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/background_audio_permissions.dart';
 import '../services/radio_service.dart';
 import '../state/app_state.dart';
 import '../state/audio_player_state.dart';
@@ -66,12 +67,14 @@ class _RadioScreenState extends State<RadioScreen> {
     }
   }
 
-  void _onTapStation(AudioPlayerState audio, RadioStation station) {
+  Future<void> _onTapStation(AudioPlayerState audio, RadioStation station) async {
     if (audio.isPlayingRadio(station)) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const AudioPlayerScreen()),
       );
     } else {
+      await ensureBackgroundAudioReady(context);
+      if (!mounted) return;
       audio.playRadio(station);
     }
   }

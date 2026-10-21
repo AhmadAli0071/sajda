@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Lets the "allow background playback" prompt open the battery
+         optimization dialog so OEM ROMs stop freezing the player. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
         android:label="Sajda: Daily Athan &amp; Qibla"
         android:name="${applicationName}"
@@ -63,6 +66,32 @@
         <receiver
             android:name=".PrayerAlarmReceiver"
             android:exported="false" />
+
+        <!-- Home screen widgets (F2) -->
+        <receiver
+            android:name=".SajdaPrayerWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sajda_prayer_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".SajdaStreakWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sajda_streak_widget_info" />
+        </receiver>
 
         <!-- Quran audio / radio background playback (just_audio + audio_service) -->
         <service

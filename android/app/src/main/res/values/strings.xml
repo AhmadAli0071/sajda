@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_prayer_description">Next prayer and today\'s prayer times</string>
+    <string name="widget_streak_description">Your current streak and today\'s progress</string>
+</resources>

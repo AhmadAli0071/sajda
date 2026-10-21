@@ -55,11 +55,14 @@ class PrayerCheckinService {
       }
 
       final checkInTime = prayerTime.add(const Duration(hours: 1));
+      final isFridayDhuhr =
+          p.name == 'Dhuhr' && prayerTime.weekday == DateTime.friday;
+      final displayName = isFridayDhuhr ? 'Friday' : p.name;
 
       await _plugin.zonedSchedule(
         id: _idFor(p.name),
         title: 'Did you pray?',
-        body: 'Did you complete ${p.name} prayer?',
+        body: 'Did you complete $displayName prayer?',
         scheduledDate: checkInTime,
         notificationDetails: _details(p.name),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

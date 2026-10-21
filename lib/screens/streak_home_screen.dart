@@ -1,11 +1,15 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/streak_v2.dart';
 import '../services/auth_service.dart';
 import '../services/firebase_auth_service.dart';
 import '../state/app_state.dart';
 import '../state/streak_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/streak/group_actions_sheet.dart';
 import '../widgets/streak/streak_components.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
@@ -38,7 +42,9 @@ class _StreakHomeScreenState extends State<StreakHomeScreen> {
   Widget build(BuildContext context) {
     // Only the auth flag gates the child — don't rebuild on every
     // unrelated AppState tick.
-    final authenticated = context.select<AppState, bool>((s) => s.isAuthenticated);
+    final authenticated = context.select<AppState, bool>(
+      (s) => s.isAuthenticated,
+    );
     final streak = context.watch<StreakState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // Gate shows the one-tap Google sign-in when there is no session OR
@@ -46,7 +52,9 @@ class _StreakHomeScreenState extends State<StreakHomeScreen> {
     // errors "Authentication required" on every tap.
     final signedIn = authenticated && !streak.authFailed;
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: isDark
+          ? AppColors.darkBackground
+          : AppColors.lightBackground,
       body: SafeArea(
         child: signedIn ? const _StreakHome() : const _GoogleAuthGate(),
       ),
@@ -73,35 +81,60 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
   String _friendlyError(String error) {
     final state = context.read<AppState>();
     if (error == 'network') {
-      return state.t('No connection. Try again.', '\u0627\u0650\u0646\u0679\u0631\u0646\u06cc\u0679 \u0646\u06c1\u06cc\u06ba\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+      return state.t(
+        'No connection. Try again.',
+        '\u0627\u0650\u0646\u0679\u0631\u0646\u06cc\u0679 \u0646\u06c1\u06cc\u06ba\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
     if (error == 'timeout') {
-      return state.t('Server is slow. Please try again.', '\u0633\u0631\u0648\u0631 \u0633\u0633\u062a \u06c1\u06d2\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+      return state.t(
+        'Server is slow. Please try again.',
+        '\u0633\u0631\u0648\u0631 \u0633\u0633\u062a \u06c1\u06d2\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
     if (error == 'server_response') {
-      return state.t('Server error. Try again later.', '\u0633\u0631\u0648\u0631 \u0645\u06cc\u06ba \u062e\u0631\u0627\u0628\u06cc\u06d4 \u0628\u0639\u062f \u0645\u06cc\u06ba \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+      return state.t(
+        'Server error. Try again later.',
+        '\u0633\u0631\u0648\u0631 \u0645\u06cc\u06ba \u062e\u0631\u0627\u0628\u06cc\u06d4 \u0628\u0639\u062f \u0645\u06cc\u06ba \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
     if (error == 'sign_in_config') {
       // DEVELOPER_ERROR: this build's signing key is not registered in
       // Firebase (e.g. Play Store installs before the Play signing SHA-1
       // was added). Honest label instead of a fake "no connection".
       return state.t(
-          'Google sign-in is not available for this app version yet.',
-          '\u06af\u0648\u06af\u0644 \u0633\u0627\u0626\u0646 \u0627\u0650\u0646 \u0627\u0633 \u0648\u0642\u062a \u062f\u0633\u062a\u06cc\u0627\u0628 \u0646\u06c1\u06cc\u06ba\u06d4 \u0686\u0646\u062f \u0645\u0646\u0679 \u0628\u0639\u062f \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+        'Google sign-in is not available for this app version yet.',
+        '\u06af\u0648\u06af\u0644 \u0633\u0627\u0626\u0646 \u0627\u0650\u0646 \u0627\u0633 \u0648\u0642\u062a \u062f\u0633\u062a\u06cc\u0627\u0628 \u0646\u06c1\u06cc\u06ba\u06d4 \u0686\u0646\u062f \u0645\u0646\u0679 \u0628\u0639\u062f \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
-    if (error.startsWith('google_platform:') || error.startsWith('google_unknown:')) {
-      return state.t('Sign-in failed. Please try again.', '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+    if (error.startsWith('google_platform:') ||
+        error.startsWith('google_unknown:')) {
+      return state.t(
+        'Sign-in failed. Please try again.',
+        '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
-    if (error.startsWith('[') || error.contains('channel-error') || error.contains('firebase_init')) {
-      return state.t('Service unavailable. Try again later.', '\u0633\u0631\u0648\u0633 \u062f\u0633\u062a\u06cc\u0627\u0628 \u0646\u06c1\u06cc\u06ba\u06d4 \u0628\u0639\u062f \u0645\u06cc\u06ba \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+    if (error.startsWith('[') ||
+        error.contains('channel-error') ||
+        error.contains('firebase_init')) {
+      return state.t(
+        'Service unavailable. Try again later.',
+        '\u0633\u0631\u0648\u0633 \u062f\u0633\u062a\u06cc\u0627\u0628 \u0646\u06c1\u06cc\u06ba\u06d4 \u0628\u0639\u062f \u0645\u06cc\u06ba \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
     if (error.contains('too-many-requests')) {
-      return state.t('Too many attempts. Try again later.', '\u0628\u06c1\u062a \u0632\u06cc\u0627\u062f\u06c1 \u06a9\u0648\u0634\u0634\u06cc\u06ba\u06d4 \u0628\u0639\u062f \u0645\u06cc\u06ba \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+      return state.t(
+        'Too many attempts. Try again later.',
+        '\u0628\u06c1\u062a \u0632\u06cc\u0627\u062f\u06c1 \u06a9\u0648\u0634\u0634\u06cc\u06ba\u06d4 \u0628\u0639\u062f \u0645\u06cc\u06ba \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
     if (error == 'google_no_id_token' || error == 'session_missing') {
-      return state.t('Sign-in failed. Please try again.', '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4');
+      return state.t(
+        'Sign-in failed. Please try again.',
+        '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645\u06d4 \u062f\u0648\u0628\u0627\u0631\u06c1 \u06a9\u0648\u0634\u0634 \u06a9\u0631\u06cc\u06ba\u06d4',
+      );
     }
-    return state.t('Sign-in failed: $error', '\u062f\u0627\u062e\u0644\u06c1 \u0646\u0627\u06a9\u0627\u0645: $error');
+    return '${state.t('Sign-in failed', 'داخلہ ناکام')}: $error';
   }
 
   Future<void> _signInWithGoogle() async {
@@ -126,9 +159,9 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
       return;
     }
     if (error == 'cancelled') return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_friendlyError(error))),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(_friendlyError(error))));
   }
 
   @override
@@ -147,9 +180,19 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
               decoration: BoxDecoration(
                 gradient: const LinearGradient(colors: AppColors.gradientTeal),
                 borderRadius: BorderRadius.circular(30),
-                boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 28, offset: Offset(0, 12))],
+                boxShadow: const [
+                  BoxShadow(
+                    color: AppColors.shadow,
+                    blurRadius: 28,
+                    offset: Offset(0, 12),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 52),
+              child: const Icon(
+                Icons.local_fire_department_rounded,
+                color: Colors.white,
+                size: 52,
+              ),
             ),
             const SizedBox(height: 30),
             Text(
@@ -172,7 +215,9 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
               style: TextStyle(
                 fontSize: 15,
                 height: 1.5,
-                color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                color: isDark
+                    ? AppColors.darkMuted
+                    : AppColors.lightSecondaryText,
               ),
             ),
             const SizedBox(height: 40),
@@ -182,19 +227,37 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
               child: OutlinedButton.icon(
                 onPressed: _loading ? null : _signInWithGoogle,
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
-                  foregroundColor: isDark ? AppColors.darkText : AppColors.lightText,
-                  side: BorderSide(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder, width: 1.2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  backgroundColor: isDark
+                      ? AppColors.darkSurface
+                      : Colors.white,
+                  foregroundColor: isDark
+                      ? AppColors.darkText
+                      : AppColors.lightText,
+                  side: BorderSide(
+                    color: isDark
+                        ? AppColors.darkSurfaceAlt
+                        : AppColors.lightBorder,
+                    width: 1.2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   elevation: isDark ? 0 : 1,
                 ),
                 icon: _loading
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      )
                     : const Icon(Icons.g_mobiledata_rounded, size: 30),
                 label: Flexible(
                   child: Text(
                     state.t('Continue with Google', 'گوگل سے جاری رکھیں'),
-                    style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -207,7 +270,6 @@ class _GoogleAuthGateState extends State<_GoogleAuthGate> {
     );
   }
 }
-
 
 // ─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€
 // Main content
@@ -256,7 +318,12 @@ class _StreakHome extends StatelessWidget {
                   streak.refreshSolo();
                   streak.refreshGroups();
                 },
-                icon: Icon(Icons.refresh_rounded, color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText),
+                icon: Icon(
+                  Icons.refresh_rounded,
+                  color: isDark
+                      ? AppColors.darkMuted
+                      : AppColors.lightSecondaryText,
+                ),
                 tooltip: refreshLabel,
               ),
             ],
@@ -319,7 +386,11 @@ class _ActionTile extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ActionTile({required this.icon, required this.label, required this.onTap});
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -334,7 +405,9 @@ class _ActionTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+            border: Border.all(
+              color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+            ),
           ),
           child: Column(
             children: [
@@ -384,11 +457,18 @@ class _BellButton extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(4),
               constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-              decoration: const BoxDecoration(color: AppColors.danger, shape: BoxShape.circle),
+              decoration: const BoxDecoration(
+                color: AppColors.danger,
+                shape: BoxShape.circle,
+              ),
               child: Text(
                 unread > 9 ? '9+' : '$unread',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white),
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -431,9 +511,17 @@ class _SoloCard extends StatelessWidget {
                 children: [
                   Text(
                     app.t('Details', 'تفصیل'),
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
                   ),
-                  const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.primary),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
                 ],
               ),
             ),
@@ -443,7 +531,10 @@ class _SoloCard extends StatelessWidget {
 
     // Loading
     if (streak.soloPhase == StreakLoadPhase.loading && solo == null) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [header, const LoadingList()]);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [header, const LoadingList()],
+      );
     }
 
     // Error
@@ -454,7 +545,10 @@ class _SoloCard extends StatelessWidget {
           header,
           ErrorCard(
             message: streak.soloError == 'network'
-                ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔')
+                ? app.t(
+                    'No connection. Check your internet.',
+                    'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔',
+                  )
                 : (streak.soloError ?? ''),
             onRetry: () => streak.refreshSolo(),
           ),
@@ -481,7 +575,9 @@ class _SoloCard extends StatelessWidget {
                 onPressed: () async {
                   final err = await context.read<StreakState>().startSolo();
                   if (err != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(err)));
                   }
                 },
                 icon: const Icon(Icons.play_arrow_rounded),
@@ -489,7 +585,9 @@ class _SoloCard extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -520,7 +618,9 @@ class _SoloCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: dark ? AppColors.darkSurface : AppColors.lightCard,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+            border: Border.all(
+              color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -539,7 +639,9 @@ class _SoloCard extends StatelessWidget {
                     done: today.of(p),
                     inFlight: streak.isPrayerInFlight(p),
                     onToggle: (done) async {
-                      final err = await context.read<StreakState>().togglePrayer(p, done);
+                      final err = await context
+                          .read<StreakState>()
+                          .togglePrayer(p, done);
                       if (err != null && context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(_friendly(app, err))),
@@ -558,7 +660,10 @@ class _SoloCard extends StatelessWidget {
 
   String _friendly(AppState app, String err) {
     if (err == 'network') {
-      return app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔');
+      return app.t(
+        'No connection. Check your internet.',
+        'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔',
+      );
     }
     return err;
   }
@@ -574,13 +679,17 @@ class _GroupsPreview extends StatelessWidget {
     final streak = context.watch<StreakState>();
     final groups = streak.activeGroups.take(3).toList();
 
-    if (streak.groupsPhase == StreakLoadPhase.loading && streak.groups.isEmpty) {
+    if (streak.groupsPhase == StreakLoadPhase.loading &&
+        streak.groups.isEmpty) {
       return const LoadingList();
     }
     if (streak.groupsPhase == StreakLoadPhase.error && streak.groups.isEmpty) {
       return ErrorCard(
         message: streak.groupsError == 'network'
-            ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔')
+            ? app.t(
+                'No connection. Check your internet.',
+                'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔',
+              )
             : (streak.groupsError ?? ''),
         onRetry: () => streak.refreshGroups(),
       );
@@ -603,8 +712,11 @@ class _GroupsPreview extends StatelessWidget {
             child: GroupCard(
               group: g,
               onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => GroupDashboardScreen(groupId: g.groupId)),
+                MaterialPageRoute(
+                  builder: (_) => GroupDashboardScreen(groupId: g.groupId),
+                ),
               ),
+              onLongPress: () => showGroupActionsSheet(context, g),
             ),
           ),
       ],
@@ -619,7 +731,11 @@ class _GroupsPreview extends StatelessWidget {
 void showNotificationsSheet(BuildContext context) {
   final streak = context.read<StreakState>();
   final app = context.read<AppState>();
-  streak.markNotificationsSeen();
+  // Mark the feed read, then pull the latest items (including pending join
+  // requests) so the sheet always reflects the server state.
+  unawaited(
+    streak.markNotificationsSeen().then((_) => streak.refreshNotifications()),
+  );
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -627,7 +743,9 @@ void showNotificationsSheet(BuildContext context) {
     builder: (ctx) {
       final isDark = Theme.of(ctx).brightness == Brightness.dark;
       return Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+        ),
         decoration: BoxDecoration(
           color: isDark ? AppColors.darkSurface : AppColors.lightCard,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -678,22 +796,36 @@ void showNotificationsSheet(BuildContext context) {
                     itemCount: items.length,
                     separatorBuilder: (_, _) => Divider(
                       height: 1,
-                      color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightDivider,
+                      color: isDark
+                          ? AppColors.darkSurfaceAlt
+                          : AppColors.lightDivider,
                     ),
                     itemBuilder: (_, i) {
                       final n = items[i];
+                      if (n.type == 'join_request') {
+                        return _JoinRequestRow(
+                          key: ValueKey('join-request-${n.id}'),
+                          item: n,
+                        );
+                      }
                       return InkWell(
                         onTap: () {
                           Navigator.of(ctx).pop();
                           if (n.groupId.isNotEmpty) {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => GroupDashboardScreen(groupId: n.groupId),
+                                builder: (_) =>
+                                    GroupDashboardScreen(groupId: n.groupId),
                               ),
                             );
                           }
                         },
-                        child: ActivityRow(item: n, groupName: ' · ${n.notifGroupName}'),
+                        child: ActivityRow(
+                          item: n,
+                          groupName: n.notifGroupName.isEmpty
+                              ? ''
+                              : ' · ${n.notifGroupName}',
+                        ),
                       );
                     },
                   );
@@ -705,4 +837,176 @@ void showNotificationsSheet(BuildContext context) {
       );
     },
   ).then((_) => streak.refreshNotifications());
+}
+
+/// Pending group join request inside the bell feed — approve/decline in place.
+class _JoinRequestRow extends StatefulWidget {
+  final NotificationItem item;
+  const _JoinRequestRow({super.key, required this.item});
+
+  @override
+  State<_JoinRequestRow> createState() => _JoinRequestRowState();
+}
+
+class _JoinRequestRowState extends State<_JoinRequestRow> {
+  bool _busy = false;
+
+  Future<void> _decide(bool approve) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final app = context.read<AppState>();
+    final error = await context.read<StreakState>().decideJoinRequest(
+      widget.item.id,
+      approve,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error == 'network'
+                ? app.t(
+                    'No connection. Check your internet.',
+                    'انٹرنیٹ نہیں ہے۔ اپنا کنکشن چیک کریں۔',
+                  )
+                : error,
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final item = widget.item;
+    final initial = item.displayName.isNotEmpty
+        ? item.displayName[0].toUpperCase()
+        : '?';
+    final muted = isDark ? AppColors.darkMuted : AppColors.lightMutedText;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryDeep,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${item.displayName} ${app.t('wants to join', 'شامل ہونا چاہتا ہے')}',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.35,
+                        color: isDark
+                            ? AppColors.darkText
+                            : AppColors.lightText,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(Icons.group_outlined, size: 13, color: muted),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            item.notifGroupName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? AppColors.darkMuted
+                                  : AppColors.lightSecondaryText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                relativeTime(item.createdAt, app.t),
+                style: TextStyle(fontSize: 11.5, color: muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              SizedBox(
+                height: 32,
+                child: OutlinedButton(
+                  onPressed: _busy ? null : () => _decide(false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.danger),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                  child: Text(
+                    app.t('Decline', 'مسترد'),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 32,
+                child: ElevatedButton(
+                  onPressed: _busy ? null : () => _decide(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                  child: _busy
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          app.t('Approve', 'منظور'),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

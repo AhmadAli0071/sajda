@@ -10,12 +10,17 @@ import '../theme/app_theme.dart';
 import '../widgets/streak/streak_components.dart';
 
 /// Group management: rename, invite code, join requests, members, leave,
-/// archive. Only owner/admin reach this screen (dashboard guards it).
+/// archive, delete. Members reach it to leave; admin-only controls stay
+/// disabled or hidden for them.
 class GroupSettingsScreen extends StatefulWidget {
   final GroupDetail group;
   final int initialTab; // 0 = general, 1 = members & requests
 
-  const GroupSettingsScreen({super.key, required this.group, this.initialTab = 0});
+  const GroupSettingsScreen({
+    super.key,
+    required this.group,
+    this.initialTab = 0,
+  });
 
   @override
   State<GroupSettingsScreen> createState() => _GroupSettingsScreenState();
@@ -33,8 +38,8 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _tab = widget.initialTab.clamp(0, 1);
     _group = widget.group;
+    _tab = _isAdmin ? widget.initialTab.clamp(0, 1) : 0;
     if (_tab == 1) _loadRequests();
   }
 
@@ -46,8 +51,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  String _err(AppState app, ApiException e) =>
-      e.isNetworkError ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔') : e.message;
+  String _err(AppState app, ApiException e) => e.isNetworkError
+      ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔')
+      : e.message;
 
   Future<void> _loadRequests() async {
     setState(() => _requestsLoading = true);
@@ -70,12 +76,24 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).brightness == Brightness.dark ? AppColors.darkSurface : AppColors.lightCard,
+        backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+            ? AppColors.darkSurface
+            : AppColors.lightCard,
         title: Text(app.t('Rename group', 'گروپ کا نام بدلیں')),
-        content: TextField(controller: controller, maxLength: 60, autofocus: true),
+        content: TextField(
+          controller: controller,
+          maxLength: 60,
+          autofocus: true,
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(app.t('Cancel', 'منسوخ'))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(app.t('Save', 'محفوظ'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(app.t('Cancel', 'منسوخ')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(app.t('Save', 'محفوظ')),
+          ),
         ],
       ),
     );
@@ -207,7 +225,14 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         Navigator.of(context).pop(); // dashboard
       } else {
         setState(() => _busy = false);
-        _toast(error == 'network' ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔') : error);
+        _toast(
+          error == 'network'
+              ? app.t(
+                  'No connection. Check your internet.',
+                  'انٹرنیٹ نہیں چل رہا۔',
+                )
+              : error,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -238,7 +263,14 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         Navigator.of(context).pop();
       } else {
         setState(() => _busy = false);
-        _toast(error == 'network' ? app.t('No connection. Check your internet.', 'انٹرنیٹ نہیں چل رہا۔') : error);
+        _toast(
+          error == 'network'
+              ? app.t(
+                  'No connection. Check your internet.',
+                  'انٹرنیٹ نہیں چل رہا۔',
+                )
+              : error,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -247,19 +279,78 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     }
   }
 
-  Future<bool?> _confirm(AppState app, {required String title, required String body, bool danger = false}) {
+  Future<void> _delete() async {
+    final app = context.read<AppState>();
+    final streakState = context.read<StreakState>();
+    final confirm = await _confirm(
+      app,
+      title: app.t('Delete group permanently?', 'گروپ مستقل حذف کریں؟'),
+      body: app.t(
+        'This deletes all members, history and streak progress for everyone. This cannot be undone.',
+        'یہ تمام ارکان، تاریخ اور اسٹریک کی پیش رفت سب کے لیے مستقل حذف کر دے گا۔ یہ واپس نہیں ہو سکتا۔',
+      ),
+      danger: true,
+    );
+    if (confirm != true) return;
+    setState(() => _busy = true);
+    try {
+      final error = await streakState.deleteGroup(_group.groupId);
+      if (!mounted) return;
+      if (error == null) {
+        Navigator.of(context).pop();
+        Navigator.of(context).pop();
+      } else {
+        setState(() => _busy = false);
+        _toast(
+          error == 'network'
+              ? app.t(
+                  'No connection. Check your internet.',
+                  'انٹرنیٹ نہیں چل رہا۔',
+                )
+              : error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _toast(e.toString());
+    }
+  }
+
+  Future<bool?> _confirm(
+    AppState app, {
+    required String title,
+    required String body,
+    bool danger = false,
+  }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightCard,
-        title: Text(title, style: TextStyle(color: isDark ? AppColors.darkText : AppColors.lightText)),
-        content: Text(body, style: TextStyle(height: 1.4, color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText)),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isDark ? AppColors.darkText : AppColors.lightText,
+          ),
+        ),
+        content: Text(
+          body,
+          style: TextStyle(
+            height: 1.4,
+            color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(app.t('Cancel', 'منسوخ'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(app.t('Cancel', 'منسوخ')),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: danger ? AppColors.danger : AppColors.primary),
+            style: TextButton.styleFrom(
+              foregroundColor: danger ? AppColors.danger : AppColors.primary,
+            ),
             child: Text(app.t('Confirm', 'تصدیق')),
           ),
         ],
@@ -273,11 +364,15 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: isDark
+          ? AppColors.darkBackground
+          : AppColors.lightBackground,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(color: isDark ? AppColors.darkText : AppColors.lightText),
+        iconTheme: IconThemeData(
+          color: isDark ? AppColors.darkText : AppColors.lightText,
+        ),
         title: Text(
           app.t('Group settings', 'گروپ کی ترتیبات'),
           style: TextStyle(
@@ -294,7 +389,11 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             child: SegmentedButton<int>(
               segments: [
                 ButtonSegment(value: 0, label: Text(app.t('General', 'عمومی'))),
-                ButtonSegment(value: 1, label: Text(app.t('Members', 'ارکان'))),
+                if (_isAdmin)
+                  ButtonSegment(
+                    value: 1,
+                    label: Text(app.t('Members', 'ارکان')),
+                  ),
               ],
               selected: {_tab},
               onSelectionChanged: (s) {
@@ -302,14 +401,18 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                 if (_tab == 1) _loadRequests();
               },
               style: SegmentedButton.styleFrom(
-                foregroundColor: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                foregroundColor: isDark
+                    ? AppColors.darkMuted
+                    : AppColors.lightSecondaryText,
                 selectedForegroundColor: Colors.white,
                 selectedBackgroundColor: AppColors.primary,
               ),
             ),
           ),
           Expanded(
-            child: _tab == 0 ? _generalTab(app, isDark) : _membersTab(app, isDark),
+            child: _tab == 0
+                ? _generalTab(app, isDark)
+                : _membersTab(app, isDark),
           ),
         ],
       ),
@@ -320,20 +423,22 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: [
-        _ActionTile2(
-          dark: isDark,
-          icon: Icons.edit_outlined,
-          label: app.t('Rename group', 'گروپ کا نام بدلیں'),
-          onTap: _isAdmin ? _rename : null,
-        ),
         if (_isAdmin) ...[
+          _ActionTile2(
+            dark: isDark,
+            icon: Icons.edit_outlined,
+            label: app.t('Rename group', 'گروپ کا نام بدلیں'),
+            onTap: _rename,
+          ),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkSurface : AppColors.lightCard,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.3),
+              ),
             ),
             child: Row(
               children: [
@@ -372,15 +477,15 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
           ),
         ],
         const SizedBox(height: 24),
-        _ActionTile2(
-          dark: isDark,
-          icon: Icons.logout_rounded,
-          label: app.t('Leave group', 'گروپ چھوڑیں'),
-          color: AppColors.danger,
-          onTap: _busy ? null : _leave,
-        ),
+        if (!_isOwner)
+          _ActionTile2(
+            dark: isDark,
+            icon: Icons.logout_rounded,
+            label: app.t('Leave group', 'گروپ چھوڑیں'),
+            color: AppColors.danger,
+            onTap: _busy ? null : _leave,
+          ),
         if (_isOwner) ...[
-          const SizedBox(height: 10),
           _ActionTile2(
             dark: isDark,
             icon: Icons.archive_outlined,
@@ -388,19 +493,30 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             color: AppColors.danger,
             onTap: _busy ? null : _archive,
           ),
+          const SizedBox(height: 10),
+          _ActionTile2(
+            dark: isDark,
+            icon: Icons.delete_forever_rounded,
+            label: app.t('Delete group', 'گروپ حذف کریں'),
+            color: AppColors.danger,
+            onTap: _busy ? null : _delete,
+          ),
         ],
       ],
     );
   }
 
-  Color dark(bool isDark) => isDark ? AppColors.darkMuted : AppColors.lightSecondaryText;
+  Color dark(bool isDark) =>
+      isDark ? AppColors.darkMuted : AppColors.lightSecondaryText;
 
   Widget _membersTab(AppState app, bool isDark) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: [
         if (_isOwner && _group.visibility == 'public') ...[
-          StreakSectionHeader(title: app.t('Join requests', 'شمولیت کی درخواستیں')),
+          StreakSectionHeader(
+            title: app.t('Join requests', 'شمولیت کی درخواستیں'),
+          ),
           if (_requestsLoading)
             const LoadingList()
           else if (_requests.isEmpty)
@@ -409,75 +525,113 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
               decoration: BoxDecoration(
                 color: isDark ? AppColors.darkSurface : AppColors.lightCard,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+                border: Border.all(
+                  color: isDark
+                      ? AppColors.darkSurfaceAlt
+                      : AppColors.lightBorder,
+                ),
               ),
               child: Text(
                 app.t('No pending requests.', 'کوئی زیرِ التوا درخواست نہیں۔'),
-                style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? AppColors.darkMuted
+                      : AppColors.lightSecondaryText,
+                ),
               ),
             )
           else
-            ..._requests.map((r) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurface : AppColors.lightCard,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+            ..._requests.map(
+              (r) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurface : AppColors.lightCard,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isDark
+                        ? AppColors.darkSurfaceAlt
+                        : AppColors.lightBorder,
                   ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 15,
-                        backgroundColor: AppColors.primaryLight,
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 15,
+                      backgroundColor: AppColors.primaryLight,
+                      child: Text(
+                        r.displayName.isNotEmpty
+                            ? r.displayName[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryDeep,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        r.displayName,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? AppColors.darkText
+                              : AppColors.lightText,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 32,
+                      child: ElevatedButton(
+                        onPressed: _busy ? null : () => _decideRequest(r, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                        ),
                         child: Text(
-                          r.displayName.isNotEmpty ? r.displayName[0].toUpperCase() : '?',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primaryDeep),
+                          app.t('Approve', 'منظور'),
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      height: 32,
+                      child: OutlinedButton(
+                        onPressed: _busy
+                            ? null
+                            : () => _decideRequest(r, false),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                        ),
                         child: Text(
-                          r.displayName,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? AppColors.darkText : AppColors.lightText,
-                          ),
+                          app.t('No', 'نہیں'),
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 32,
-                        child: ElevatedButton(
-                          onPressed: _busy ? null : () => _decideRequest(r, true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                          ),
-                          child: Text(app.t('Approve', 'منظور'), style: const TextStyle(fontSize: 12)),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        height: 32,
-                        child: OutlinedButton(
-                          onPressed: _busy ? null : () => _decideRequest(r, false),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.danger,
-                            side: const BorderSide(color: AppColors.danger),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                          ),
-                          child: Text(app.t('No', 'نہیں'), style: const TextStyle(fontSize: 12)),
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: 18),
         ],
         StreakSectionHeader(title: app.t('Manage members', 'ارکان کا انتظام')),
@@ -486,7 +640,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkSurface : AppColors.lightCard,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+            border: Border.all(
+              color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+            ),
           ),
           child: Text(
             app.t(
@@ -496,7 +652,9 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
             style: TextStyle(
               fontSize: 12.5,
               height: 1.5,
-              color: isDark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+              color: isDark
+                  ? AppColors.darkMuted
+                  : AppColors.lightSecondaryText,
             ),
           ),
         ),
@@ -533,7 +691,9 @@ class _ActionTile2 extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+            border: Border.all(
+              color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+            ),
           ),
           child: Row(
             children: [
@@ -542,10 +702,18 @@ class _ActionTile2 extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c),
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    color: c,
+                  ),
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, size: 20, color: dark ? AppColors.darkMuted : AppColors.lightMutedText),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: dark ? AppColors.darkMuted : AppColors.lightMutedText,
+              ),
             ],
           ),
         ),

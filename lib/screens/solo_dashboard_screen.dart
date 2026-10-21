@@ -4,7 +4,11 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../state/streak_state.dart';
 import '../theme/app_theme.dart';
+import '../utils/share_image.dart';
+import '../utils/streak_share_text.dart';
 import '../widgets/streak/streak_components.dart';
+import '../widgets/streak/streak_share_card.dart';
+import 'achievements_screen.dart';
 import 'solo_history_screen.dart';
 
 /// Full solo streak view: hero, today's ticks, stats, history link.
@@ -33,6 +37,33 @@ class SoloDashboardScreen extends StatelessWidget {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: app.t('Achievements', 'کامیابیاں'),
+            icon: const Icon(Icons.emoji_events_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AchievementsScreen()),
+            ),
+          ),
+          IconButton(
+            tooltip: app.t('Share', 'شیئر کریں'),
+            icon: const Icon(Icons.ios_share_rounded),
+            onPressed: solo == null || !solo.started
+                ? null
+                : () => shareWidgetAsImage(
+                      context: context,
+                      widget: StreakShareCard(
+                        currentStreak: solo.currentStreak,
+                        bestStreak: solo.bestStreak,
+                        todayCount: solo.today.completedCount,
+                        monthLabel: shareCardMonthLabel(),
+                      ),
+                      fileName: 'sajda_streak_card',
+                      caption: buildStreakShareCaption(
+                        currentStreak: solo.currentStreak,
+                        bestStreak: solo.bestStreak,
+                      ),
+                    ),
+          ),
           IconButton(
             tooltip: app.t('History', 'تاریخ'),
             icon: const Icon(Icons.calendar_month_rounded),
@@ -115,7 +146,7 @@ class SoloDashboardScreen extends StatelessWidget {
                           label: app.t('Started', 'شروع ہوا'),
                           value: solo.currentStreakStartDate != null && solo.currentStreakStartDate!.length >= 8
                               ? '${solo.currentStreakStartDate!.substring(4, 6)}/${solo.currentStreakStartDate!.substring(6, 8)}'
-                              : '—',
+                              : app.t('Today', 'آج'),
                         ),
                       ),
                     ],
@@ -159,7 +190,7 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: dark ? AppColors.darkSurface : AppColors.lightCard,
         borderRadius: BorderRadius.circular(16),
@@ -167,27 +198,44 @@ class _StatCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 22, color: AppColors.primary),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: dark ? AppColors.darkText : AppColors.lightText,
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 20, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    height: 1.2,
+                    color: dark ? AppColors.darkText : AppColors.lightText,
+                  ),
                 ),
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.2,
+                    color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

@@ -22,6 +22,7 @@ class PrayerNotificationService {
   static const _reminderChannelId = 'prayer_reminders';
   static const _notificationIdBase = 9000;
   static const _reminderIdBase = 8000;
+  static const _jummaId = 7000;
   static const _channelsV2Key = 'sajda_azan_channels_v2';
   static const _kExactAzan = 'sajda_exact_azan';
 
@@ -220,8 +221,9 @@ class PrayerNotificationService {
         continue;
       }
 
-      final prayerName =
-          isUrdu ? (AppStrings.prayerNames[p.name] ?? p.name) : p.name;
+      final prayerName = (p.name == 'Dhuhr' && azanWhen.weekday == DateTime.friday)
+          ? (isUrdu ? 'جمعہ' : 'Friday')
+          : (isUrdu ? (AppStrings.prayerNames[p.name] ?? p.name) : p.name);
 
       if (pMode == 'full' || pMode == 'silent') {
         final ok = exact
@@ -276,6 +278,20 @@ class PrayerNotificationService {
             );
       if (!reminderOk) failures++;
 
+      // Special Friday reminder at Dhuhr time — Surah Al-Kahf, Durood, duas.
+      if (p.name == 'Dhuhr' && azanWhen.weekday == DateTime.friday) {
+        final jummaOk = await _scheduleInexact(
+          id: _jummaId,
+          title: isUrdu ? 'جمعہ مبارک! 🕌' : 'Friday Mubarak! 🕌',
+          body: isUrdu
+              ? 'سورۃ کہف پڑھیں، نبی کریم ﷺ پر درود پڑھیں، آج دعاوں کو زیادہ کریں۔'
+              : 'Recite Surah Al-Kahf, send Durood upon the Prophet ﷺ, and increase your duas.',
+          when: azanWhen,
+          mode: 'reminder',
+        );
+        if (!jummaOk) failures++;
+      }
+
       id++;
     }
     if (failures > 0) {
@@ -294,6 +310,22 @@ class PrayerNotificationService {
   }) async {
     try {
       final silent = mode == 'silent';
+      final isReminder = mode == 'reminder';
+      final channelId = isReminder
+          ? _reminderChannelId
+          : silent
+              ? _silentChannelId
+              : _channelId;
+      final channelName = isReminder
+          ? 'Prayer Reminders'
+          : silent
+              ? 'Silent Prayer Alerts'
+              : 'Prayer Azan Alerts';
+      final channelDesc = isReminder
+          ? 'Reminder 10 minutes before every prayer time'
+          : silent
+              ? 'Silent prayer time notifications'
+              : 'Full azan sound at every prayer time';
       await _plugin.zonedSchedule(
         id: id,
         title: title,
@@ -301,11 +333,9 @@ class PrayerNotificationService {
         scheduledDate: when,
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
-            silent ? _silentChannelId : _channelId,
-            silent ? 'Silent Prayer Alerts' : 'Prayer Azan Alerts',
-            channelDescription: silent
-                ? 'Silent prayer time notifications'
-                : 'Full azan sound at every prayer time',
+            channelId,
+            channelName,
+            channelDescription: channelDesc,
             importance: silent ? Importance.high : Importance.max,
             priority: Priority.max,
           ),
@@ -339,6 +369,7 @@ class PrayerNotificationService {
     for (var id = _reminderIdBase; id < _reminderIdBase + 10; id++) {
       futures.add(_plugin.cancel(id: id).catchError((_) {}));
     }
+    futures.add(_plugin.cancel(id: _jummaId).catchError((_) {}));
     await Future.wait(futures);
   }
 

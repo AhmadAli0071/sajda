@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:device_preview/device_preview.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -16,6 +18,7 @@ import 'services/firebase_auth_service.dart';
 import 'services/notification_router.dart';
 import 'services/prayer_notification_service.dart';
 import 'services/quran_translation_provider.dart';
+import 'services/sajda_stats_service.dart';
 import 'services/tafsir_provider.dart';
 import 'services/auth_service.dart';
 import 'screens/group_preview_screen.dart';
@@ -52,18 +55,23 @@ Future<void> main() async {
     await FirebaseAuthService.instance.ensureInitialized();
   } catch (_) {}
   runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AppState()..load()),
-        ChangeNotifierProvider(create: (_) => StreakState()),
-        ChangeNotifierProvider(create: (_) => AudioPlayerState()),
-        ChangeNotifierProvider(create: (_) => AzkarAudioProvider()),
-        ChangeNotifierProvider(create: (_) => AdhkarService.instance..ensureTranslations()),
-        ChangeNotifierProvider(create: (_) => QuranTranslationProvider()),
-        ChangeNotifierProvider(create: (_) => TafsirProvider()),
-        Provider(create: (_) => AuthService.instance),
-      ],
-      child: const SajdaApp(),
+    DevicePreview(
+      enabled: !kReleaseMode,
+      builder: (context) => MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AppState()..load()),
+          ChangeNotifierProvider(
+              create: (_) => SajdaStatsService.instance..load()),
+          ChangeNotifierProvider(create: (_) => StreakState()),
+          ChangeNotifierProvider(create: (_) => AudioPlayerState()),
+          ChangeNotifierProvider(create: (_) => AzkarAudioProvider()),
+          ChangeNotifierProvider(create: (_) => AdhkarService.instance..ensureTranslations()),
+          ChangeNotifierProvider(create: (_) => QuranTranslationProvider()),
+          ChangeNotifierProvider(create: (_) => TafsirProvider()),
+          Provider(create: (_) => AuthService.instance),
+        ],
+        child: const SajdaApp(),
+      ),
     ),
   );
 }
@@ -112,28 +120,31 @@ class SajdaApp extends StatelessWidget {
         // Keep status / nav bar icons readable as the theme switches
         // (including system-default mode, which can flip mid-session).
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness:
-                isDark ? Brightness.light : Brightness.dark,
-            statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-            systemNavigationBarColor: Colors.transparent,
-            systemNavigationBarIconBrightness:
-                isDark ? Brightness.light : Brightness.dark,
-            systemNavigationBarDividerColor: Colors.transparent,
-          ),
-          child: SafeArea(
-            // Edge-to-edge is on, so keep the WHOLE app above the system
-            // navigation bar: devices with a navbar get their content
-            // lifted above it (padding.bottom > 0), devices without one
-            // have padding.bottom == 0 and stay truly full screen. Top is
-            // left to each screen's AppBar/SafeArea.
-            top: false,
-            bottom: true,
-            child: Directionality(
-              textDirection: isUrdu ? TextDirection.rtl : TextDirection.ltr,
-              child: child ?? const SizedBox.shrink(),
+        return MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.25,
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness:
+                  isDark ? Brightness.light : Brightness.dark,
+              statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+              systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarIconBrightness:
+                  isDark ? Brightness.light : Brightness.dark,
+              systemNavigationBarDividerColor: Colors.transparent,
+            ),
+            child: SafeArea(
+              // Edge-to-edge is on, so keep the WHOLE app above the system
+              // navigation bar: devices with a navbar get their content
+              // lifted above it (padding.bottom > 0), devices without one
+              // have padding.bottom == 0 and stay truly full screen. Top is
+              // left to each screen's AppBar/SafeArea.
+              top: false,
+              bottom: true,
+              child: Directionality(
+                textDirection: isUrdu ? TextDirection.rtl : TextDirection.ltr,
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         );
@@ -231,7 +242,7 @@ class _RootState extends State<_Root> {
         SnackBar(
           content: Text(error == null
               ? app.t('Signed in — welcome!', 'داخل ہو گیا — خوش آمدید!')
-              : app.t('Sign-in failed: $error', 'داخلہ ناکام: $error')),
+              : '${app.t('Sign-in failed', 'داخلہ ناکام')}: $error'),
         ),
       );
     }
@@ -254,9 +265,10 @@ class _RootState extends State<_Root> {
             : app.t('Restore failed', 'بحالی ناکام')),
         content: Text(
           error ??
-              app.t(
-                  'Signed in as ${link.displayName}. Please close and reopen the app.',
-                  '${link.displayName} کے طور پر داخل ہو گئے۔ براہ کرم ایپ بند کر کے دوبارہ کھولیں۔'),
+              app
+                  .t('Signed in as {name}. Please close and reopen the app.',
+                      '{name} کے طور پر داخل ہو گئے۔ براہ کرم ایپ بند کر کے دوبارہ کھولیں۔')
+                  .replaceAll('{name}', link.displayName),
         ),
         actions: [
           TextButton(

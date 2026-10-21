@@ -177,12 +177,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
                             const SizedBox(width: 8),
                             Flexible(
                               child: Text(
-                                state.t(
-                                      'Distance to Kaaba: ${_qibla!.distance} km',
-                                      'کعبہ تک فاصلہ: ${_qibla!.distance} کلومیٹر',
+                                state
+                                    .t(
+                                      'Distance to Kaaba: {distance} km',
+                                      'کعبہ تک فاصلہ: {distance} کلومیٹر',
                                     )
-                                    .replaceFirst(
-                                      '${_qibla!.distance}',
+                                    .replaceAll(
+                                      '{distance}',
                                       _qibla!.distance.toString(),
                                     ),
                                 style: const TextStyle(

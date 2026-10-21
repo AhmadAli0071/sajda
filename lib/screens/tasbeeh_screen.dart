@@ -1,4 +1,5 @@
-﻿import 'dart:convert';
+﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../data/static_data.dart';
 import '../services/custom_tasbeeh_service.dart';
+import '../services/sajda_stats_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
@@ -173,7 +175,10 @@ class _TasbeehScreenState extends State<TasbeehScreen>
       if (completed) _sets++;
     });
     _persist();
-    if (completed) _celebrate(state);
+    if (completed) {
+      unawaited(SajdaStatsService.instance.addTasbeehSet());
+      _celebrate(state);
+    }
   }
 
   void _celebrate(AppState state) {

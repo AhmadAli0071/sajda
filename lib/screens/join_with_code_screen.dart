@@ -42,11 +42,16 @@ class _JoinWithCodeScreenState extends State<JoinWithCodeScreen> {
       _error = null;
     });
     try {
-      await StreakV2Api.instance.getInvitePreview(_code);
+      final preview = await StreakV2Api.instance.getInvitePreview(_code);
       if (!mounted) return;
       setState(() => _busy = false);
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => GroupPreviewScreen(inviteCode: _code)),
+        MaterialPageRoute(
+          builder: (_) => GroupPreviewScreen(
+            inviteCode: _code,
+            initialPreview: preview,
+          ),
+        ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;

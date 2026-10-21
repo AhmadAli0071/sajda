@@ -9,25 +9,34 @@ import '../state/app_state.dart';
 import '../state/streak_state.dart';
 import '../services/api_client.dart';
 import '../services/ayah_notification_service.dart';
+import '../services/daily_reminder_service.dart';
 import '../services/notification_router.dart';
 import '../services/prayer_checkin_service.dart';
 import '../services/prayer_notification_service.dart';
 import '../services/push_service.dart';
+import '../services/ramadan_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/mini_player_bar.dart';
+import 'achievements_screen.dart';
 import 'adhkar_screen.dart';
 import 'calendar_screen.dart';
+import 'card_studio_screen.dart';
+import 'daily_zikr_screen.dart';
 import 'home_screen.dart';
 import 'mushaf_screen.dart';
 import 'names_screen.dart';
 import 'pillars_screen.dart';
+import 'prayer_garden_screen.dart';
 import 'qibla_screen.dart';
+import 'quiz_screen.dart';
 import 'quran_screen.dart';
 import 'radio_screen.dart';
+import 'ramadan_screen.dart';
 import 'settings_screen.dart';
 import 'streak_home_screen.dart';
 import 'support_screen.dart';
 import 'tasbeeh_screen.dart';
+import 'wrapped_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -362,6 +371,28 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       await AyahNotificationService.instance
           .scheduleNext7Days(hour: zuhr, minute: zuhrMin + 15, timezone: tz);
     }
+    if (state.dailyReminderEnabled) {
+      try {
+        await DailyReminderService.instance.scheduleNext7Days(
+          timezone: tz,
+          category: state.dailyReminderCategory,
+          isUrdu: state.isUrdu,
+        );
+      } catch (_) {}
+    }
+    if (state.ramadanRemindersEnabled && RamadanService.isRamadan()) {
+      try {
+        await RamadanService.scheduleIftarReminders(
+          lat: state.lat ?? 0,
+          lng: state.lng ?? 0,
+          timezone: tz,
+          method: state.prayerMethod,
+          school: state.asrSchool,
+          city: state.displayCityName,
+          isUrdu: state.isUrdu,
+        );
+      } catch (_) {}
+    }
   }
 }
 
@@ -438,6 +469,55 @@ List<MoreItem> moreItems(BuildContext context) {
       icon: Icons.explore_rounded,
       color: const Color(0xFFB8860B),
       screen: const QiblaScreen(),
+    ),
+    MoreItem(
+      title: 'Achievements',
+      titleUr: 'کامیابیاں',
+      icon: Icons.emoji_events_outlined,
+      color: const Color(0xFFD4A937),
+      screen: const AchievementsScreen(),
+    ),
+    MoreItem(
+      title: 'Sajda Wrapped',
+      titleUr: 'سجدة رپورٹ',
+      icon: Icons.auto_awesome_outlined,
+      color: const Color(0xFF7D3C98),
+      screen: const WrappedScreen(),
+    ),
+    MoreItem(
+      title: 'Prayer Garden',
+      titleUr: 'نماز کا باغ',
+      icon: Icons.park_outlined,
+      color: const Color(0xFF1B7F5C),
+      screen: const PrayerGardenScreen(),
+    ),
+    MoreItem(
+      title: 'Card Studio',
+      titleUr: 'کارڈ اسٹوڈیو',
+      icon: Icons.brush_outlined,
+      color: const Color(0xFFC0392B),
+      screen: const CardStudioScreen(),
+    ),
+    MoreItem(
+      title: 'Daily Islamic Quiz',
+      titleUr: 'روزانہ اسلامی کوئز',
+      icon: Icons.psychology_outlined,
+      color: const Color(0xFF1F618D),
+      screen: const QuizScreen(),
+    ),
+    MoreItem(
+      title: 'Zikr & Du\'a of the Day',
+      titleUr: 'آج کا ذکر اور دعا',
+      icon: Icons.volunteer_activism_outlined,
+      color: const Color(0xFF117A65),
+      screen: const DailyZikrScreen(),
+    ),
+    MoreItem(
+      title: 'Ramadan Mode',
+      titleUr: 'رمضان موڈ',
+      icon: Icons.nightlight_outlined,
+      color: const Color(0xFF5B2C6F),
+      screen: const RamadanScreen(),
     ),
   ];
 }

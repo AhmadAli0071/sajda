@@ -63,7 +63,11 @@ class StreakHero extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(compact ? 16 : 24),
         boxShadow: const [
-          BoxShadow(color: AppColors.shadow, blurRadius: 18, offset: Offset(0, 8)),
+          BoxShadow(
+            color: AppColors.shadow,
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
         ],
       ),
       child: Row(
@@ -153,7 +157,10 @@ class TodayProgressHeader extends StatelessWidget {
     final state = context.watchLanguage;
     final today = state.t('Today', 'آج');
     final done = state.t('done', 'مکمل');
-    final allDone = state.t('All prayers complete — Alhamdulillah!', 'سب نمازیں مکمل — الحمدللہ!');
+    final allDone = state.t(
+      'All prayers complete — Alhamdulillah!',
+      'سب نمازیں مکمل — الحمدللہ!',
+    );
     final fraction = needed <= 0 ? 0.0 : (completed / needed).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,7 +173,9 @@ class TodayProgressHeader extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: state.darkMode ? AppColors.darkText : AppColors.lightText,
+                color: state.darkMode
+                    ? AppColors.darkText
+                    : AppColors.lightText,
               ),
             ),
             Text(
@@ -177,8 +186,8 @@ class TodayProgressHeader extends StatelessWidget {
                 color: dayComplete
                     ? AppColors.success
                     : state.darkMode
-                        ? AppColors.darkMuted
-                        : AppColors.lightSecondaryText,
+                    ? AppColors.darkMuted
+                    : AppColors.lightSecondaryText,
               ),
             ),
           ],
@@ -230,14 +239,18 @@ class PrayerTickTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watchLanguage;
     final meta = _labels[prayer] ?? (prayer, prayer, Icons.circle_outlined);
-    final label = state.t(meta.$1, meta.$2);
+    final isFridayDhuhr =
+        prayer == 'dhuhr' && DateTime.now().weekday == DateTime.friday;
+    final label = isFridayDhuhr
+        ? state.t('Friday', 'جمعہ')
+        : state.t(meta.$1, meta.$2);
     final dark = state.darkMode;
     return Material(
       color: done
           ? AppColors.primary.withValues(alpha: 0.12)
           : dark
-              ? AppColors.darkSurfaceAlt
-              : AppColors.lightCard,
+          ? AppColors.darkSurfaceAlt
+          : AppColors.lightCard,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -246,7 +259,13 @@ class PrayerTickTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              Icon(meta.$3, size: 22, color: done ? AppColors.primary : (dark ? AppColors.darkMuted : AppColors.lightMutedText)),
+              Icon(
+                meta.$3,
+                size: 22,
+                color: done
+                    ? AppColors.primary
+                    : (dark ? AppColors.darkMuted : AppColors.lightMutedText),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -275,12 +294,20 @@ class PrayerTickTile extends StatelessWidget {
                     shape: BoxShape.circle,
                     color: done ? AppColors.primary : Colors.transparent,
                     border: Border.all(
-                      color: done ? AppColors.primary : (dark ? AppColors.darkMuted : AppColors.lightBorder),
+                      color: done
+                          ? AppColors.primary
+                          : (dark
+                                ? AppColors.darkMuted
+                                : AppColors.lightBorder),
                       width: 2,
                     ),
                   ),
                   child: done
-                      ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        )
                       : null,
                 ),
             ],
@@ -314,7 +341,9 @@ class MemberProgressRow extends StatelessWidget {
     final state = context.watchLanguage;
     final dark = state.darkMode;
     final you = state.t('You', 'آپ');
-    final name = member.isMe ? '$you · ${member.displayName}' : member.displayName;
+    final name = member.isMe
+        ? '$you · ${member.displayName}'
+        : member.displayName;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
@@ -329,11 +358,15 @@ class MemberProgressRow extends StatelessWidget {
                   ? AppColors.primary
                   : (dark ? AppColors.darkSurfaceAlt : AppColors.primaryLight),
               child: Text(
-                member.displayName.isNotEmpty ? member.displayName[0].toUpperCase() : '?',
+                member.displayName.isNotEmpty
+                    ? member.displayName[0].toUpperCase()
+                    : '?',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: member.isDayComplete ? Colors.white : AppColors.primaryDeep,
+                  color: member.isDayComplete
+                      ? Colors.white
+                      : AppColors.primaryDeep,
                 ),
               ),
             ),
@@ -351,24 +384,32 @@ class MemberProgressRow extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: dark ? AppColors.darkText : AppColors.lightText,
+                            color: dark
+                                ? AppColors.darkText
+                                : AppColors.lightText,
                           ),
                         ),
                       ),
                       if (member.role == 'owner' || member.role == 'admin') ...[
                         const SizedBox(width: 6),
                         Icon(
-                          member.role == 'owner' ? Icons.workspace_premium_rounded : Icons.shield_outlined,
+                          member.role == 'owner'
+                              ? Icons.workspace_premium_rounded
+                              : Icons.shield_outlined,
                           size: 14,
                           color: AppColors.primary,
                         ),
                       ],
                       // Brand-new joiner: counts from today, becomes part of
                       // the group-day requirement from tomorrow.
-                      if (!member.isRequiredToday) ...[
+                      if (!member.isRequiredToday &&
+                          !member.excludedInactive) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
@@ -387,9 +428,14 @@ class MemberProgressRow extends StatelessWidget {
                       if (member.excludedInactive) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
-                            color: AppColors.lightMutedText.withValues(alpha: 0.15),
+                            color: AppColors.lightMutedText.withValues(
+                              alpha: 0.15,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -397,7 +443,9 @@ class MemberProgressRow extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 9.5,
                               fontWeight: FontWeight.w700,
-                              color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                              color: dark
+                                  ? AppColors.darkMuted
+                                  : AppColors.lightSecondaryText,
                             ),
                           ),
                         ),
@@ -412,11 +460,19 @@ class MemberProgressRow extends StatelessWidget {
             if (trailingLabel != null)
               Text(
                 trailingLabel!,
-                style: TextStyle(fontSize: 12, color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: dark
+                      ? AppColors.darkMuted
+                      : AppColors.lightSecondaryText,
+                ),
               )
             else
-              Icon(Icons.chevron_right_rounded,
-                  size: 18, color: dark ? AppColors.darkMuted : AppColors.lightMutedText),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: dark ? AppColors.darkMuted : AppColors.lightMutedText,
+              ),
           ],
         ),
       ),
@@ -497,7 +553,10 @@ class ActivityRow extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             relativeTime(item.createdAt, state.t),
-            style: TextStyle(fontSize: 11.5, color: dark ? AppColors.darkMuted : AppColors.lightMutedText),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: dark ? AppColors.darkMuted : AppColors.lightMutedText,
+            ),
           ),
         ],
       ),
@@ -568,12 +627,31 @@ class ActivityRow extends StatelessWidget {
           AppColors.danger,
           '${item.displayName} ${state.t('was declined', 'مسترد ہوا')}$g',
         );
+      case 'group_shield_used':
+        return (
+          Icons.shield_rounded,
+          AppColors.primary,
+          '${state.t('Shield saved the group day', 'شیلڈ نے گروپ کا دن بچا لیا')}$g',
+        );
+      case 'group_archived':
+        return (
+          Icons.archive_outlined,
+          AppColors.lightMutedText,
+          '${state.t('Group archived', 'گروپ آرکائیو ہو گیا')}$g',
+        );
       default:
-        return (Icons.notifications_none_rounded, AppColors.lightMutedText, item.type);
+        return (
+          Icons.notifications_none_rounded,
+          AppColors.lightMutedText,
+          state.t('Group activity', 'گروپ کی سرگرمی'),
+        );
     }
   }
 
   String _prayerLabel(AppState state, String prayer) {
+    if (prayer == 'dhuhr' && DateTime.now().weekday == DateTime.friday) {
+      return state.t('Friday', 'جمعہ');
+    }
     final map = {
       'fajr': ('Fajr', 'فجر'),
       'dhuhr': ('Dhuhr', 'ظهر'),
@@ -653,11 +731,17 @@ class EmptyStateCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: dark ? AppColors.darkSurface : AppColors.lightCard,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder),
+        border: Border.all(
+          color: dark ? AppColors.darkSurfaceAlt : AppColors.lightBorder,
+        ),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 44, color: dark ? AppColors.darkMuted : AppColors.lightMutedText),
+          Icon(
+            icon,
+            size: 44,
+            color: dark ? AppColors.darkMuted : AppColors.lightMutedText,
+          ),
           const SizedBox(height: 14),
           Text(
             title,
@@ -706,7 +790,11 @@ class ErrorCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Icon(Icons.cloud_off_rounded, size: 34, color: AppColors.danger),
+          const Icon(
+            Icons.cloud_off_rounded,
+            size: 34,
+            color: AppColors.danger,
+          ),
           const SizedBox(height: 10),
           Text(
             message,
@@ -744,9 +832,10 @@ class _LoadingListState extends State<LoadingList>
   Timer? _timer;
   // ONE controller drives every animation (name breathing, glow pulse,
   // shimmer sweep) — cheap on battery, perfectly in sync.
-  late final AnimationController _anim =
-      AnimationController(vsync: this, duration: const Duration(seconds: 4))
-        ..repeat();
+  late final AnimationController _anim = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
 
   @override
   void initState() {
@@ -777,181 +866,196 @@ class _LoadingListState extends State<LoadingList>
     // it repaints alone instead of dragging the whole loader subtree.
     return RepaintBoundary(
       child: AnimatedBuilder(
-      animation: _anim,
-      builder: (context, _) {
-        final t = _anim.value;
-        final wave = 0.5 + 0.5 * math.sin(t * 2 * math.pi); // 0..1..0
-        final breath = 1 + 0.025 * math.sin(t * 2 * math.pi);
-        return Container(
-      // Full-bleed night sky — the loader IS the screen while data loads.
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF07231E), // deep emerald night
-            Color(0xFF0F1A3C), // indigo
-            Color(0xFF07080F), // near black
-          ],
-          stops: [0.0, 0.55, 1.0],
-        ),
-      ),
-      child: Stack(
-        children: [
-          // Sparse star specks — drawn once, never repaint.
-          const Positioned.fill(
-            child: CustomPaint(painter: _StarField(seed: 7)),
-          ),
-          // Golden halo behind the name, softly breathing.
-          Center(
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Color(0xFFE2B857).withValues(alpha: 0.16 + 0.10 * wave),
-                    Color(0xFFE2B857).withValues(alpha: 0.0),
-                  ],
-                ),
+        animation: _anim,
+        builder: (context, _) {
+          final t = _anim.value;
+          final wave = 0.5 + 0.5 * math.sin(t * 2 * math.pi); // 0..1..0
+          final breath = 1 + 0.025 * math.sin(t * 2 * math.pi);
+          return Container(
+            // Full-bleed night sky — the loader IS the screen while data loads.
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF07231E), // deep emerald night
+                  Color(0xFF0F1A3C), // indigo
+                  Color(0xFF07080F), // near black
+                ],
+                stops: [0.0, 0.55, 1.0],
               ),
             ),
-          ),
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 36),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 450),
-                    transitionBuilder: (child, anim) => FadeTransition(
-                      opacity: anim,
-                      child: ScaleTransition(
-                        scale: Tween<double>(begin: 0.96, end: 1).animate(anim),
-                        child: child,
-                      ),
-                    ),
-                    child: Transform.scale(
-                      key: ValueKey(_index),
-                      scale: breath,
-                      child: Column(
-                        key: ValueKey('n$_index'),
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (b) => const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0xFFF9E9C0), // light gold
-                                Color(0xFFE2B857), // gold
-                                Color(0xFFB98A2F), // deep gold
-                              ],
-                            ).createShader(b),
-                            child: Text(
-                              n.arabic,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 44,
-                                height: 1.45,
-                                fontWeight: FontWeight.w700,
-                                shadows: [
-                                  Shadow(
-                                    color: const Color(0xFFE2B857)
-                                        .withValues(alpha: 0.35),
-                                    blurRadius: 24,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE2B857)
-                                  .withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                color: const Color(0xFFE2B857)
-                                    .withValues(alpha: 0.35),
-                              ),
-                            ),
-                            child: Text(
-                              n.en,
-                              style: const TextStyle(
-                                color: Color(0xFFF3DFA8),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.6,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            meaning,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.75),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+            child: Stack(
+              children: [
+                // Sparse star specks — drawn once, never repaint.
+                const Positioned.fill(
+                  child: CustomPaint(painter: _StarField(seed: 7)),
+                ),
+                // Golden halo behind the name, softly breathing.
+                Center(
+                  child: Container(
+                    width: 300,
+                    height: 300,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          Color(
+                            0xFFE2B857,
+                          ).withValues(alpha: 0.16 + 0.10 * wave),
+                          Color(0xFFE2B857).withValues(alpha: 0.0),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 34),
-                  // Slim shimmer bar — sweeps gently while the data loads.
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: Container(
-                      height: 4,
-                      width: 210,
-                      color: Colors.white.withValues(alpha: 0.10),
-                      child: Align(
-                        alignment: Alignment((-1 + 2 * wave).toDouble(), 0),
-                        child: Container(
-                          width: 84,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(99),
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFFE2B857).withValues(alpha: 0.0),
-                                const Color(0xFFF3DFA8),
-                                const Color(0xFFE2B857).withValues(alpha: 0.0),
+                ),
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 36),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 450),
+                          transitionBuilder: (child, anim) => FadeTransition(
+                            opacity: anim,
+                            child: ScaleTransition(
+                              scale: Tween<double>(
+                                begin: 0.96,
+                                end: 1,
+                              ).animate(anim),
+                              child: child,
+                            ),
+                          ),
+                          child: Transform.scale(
+                            key: ValueKey(_index),
+                            scale: breath,
+                            child: Column(
+                              key: ValueKey('n$_index'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ShaderMask(
+                                  shaderCallback: (b) => const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFFF9E9C0), // light gold
+                                      Color(0xFFE2B857), // gold
+                                      Color(0xFFB98A2F), // deep gold
+                                    ],
+                                  ).createShader(b),
+                                  child: Text(
+                                    n.arabic,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 44,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w700,
+                                      shadows: [
+                                        Shadow(
+                                          color: const Color(
+                                            0xFFE2B857,
+                                          ).withValues(alpha: 0.35),
+                                          blurRadius: 24,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFFE2B857,
+                                    ).withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(30),
+                                    border: Border.all(
+                                      color: const Color(
+                                        0xFFE2B857,
+                                      ).withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    n.en,
+                                    style: const TextStyle(
+                                      color: Color(0xFFF3DFA8),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.6,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  meaning,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 34),
+                        // Slim shimmer bar — sweeps gently while the data loads.
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: Container(
+                            height: 4,
+                            width: 210,
+                            color: Colors.white.withValues(alpha: 0.10),
+                            child: Align(
+                              alignment: Alignment(
+                                (-1 + 2 * wave).toDouble(),
+                                0,
+                              ),
+                              child: Container(
+                                width: 84,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(99),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      const Color(
+                                        0xFFE2B857,
+                                      ).withValues(alpha: 0.0),
+                                      const Color(0xFFF3DFA8),
+                                      const Color(
+                                        0xFFE2B857,
+                                      ).withValues(alpha: 0.0),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          app.t('Loading…', 'لوڈ ہو رہا ہے…'),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.35),
+                            fontSize: 11,
+                            letterSpacing: 2.2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  Text(
-                    app.t('Loading…', 'لوڈ ہو رہا ہے…'),
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      fontSize: 11,
-                      letterSpacing: 2.2,
-                      fontWeight: FontWeight.w600,
-                    ),
-                   ),
-                 ],
-               ),
-             ),
-           ),
-          ],
-        ),
-        );
-      },
-    ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -965,12 +1069,14 @@ class _StarField extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rng = math.Random(seed);
-    final paint = Paint() ..color = Colors.white;
+    final paint = Paint()..color = Colors.white;
     for (var i = 0; i < 46; i++) {
       final x = rng.nextDouble() * size.width;
       final y = rng.nextDouble() * size.height;
       final r = 0.5 + rng.nextDouble() * 1.3;
-      paint.color = Colors.white.withValues(alpha: 0.06 + rng.nextDouble() * 0.22);
+      paint.color = Colors.white.withValues(
+        alpha: 0.06 + rng.nextDouble() * 0.22,
+      );
       canvas.drawCircle(Offset(x, y), r, paint);
     }
   }
@@ -986,8 +1092,14 @@ class _StarField extends CustomPainter {
 class GroupCard extends StatelessWidget {
   final GroupSummary group;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
-  const GroupCard({super.key, required this.group, required this.onTap});
+  const GroupCard({
+    super.key,
+    required this.group,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1005,6 +1117,7 @@ class GroupCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1013,8 +1126,8 @@ class GroupCard extends StatelessWidget {
               color: groupDone
                   ? AppColors.success.withValues(alpha: 0.4)
                   : dark
-                      ? AppColors.darkSurfaceAlt
-                      : AppColors.lightBorder,
+                  ? AppColors.darkSurfaceAlt
+                  : AppColors.lightBorder,
             ),
           ),
           child: Row(
@@ -1023,7 +1136,9 @@ class GroupCard extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: AppColors.gradientTeal),
+                  gradient: const LinearGradient(
+                    colors: AppColors.gradientTeal,
+                  ),
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Center(
@@ -1051,13 +1166,19 @@ class GroupCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
-                              color: dark ? AppColors.darkText : AppColors.lightText,
+                              color: dark
+                                  ? AppColors.darkText
+                                  : AppColors.lightText,
                             ),
                           ),
                         ),
                         if (group.isOwner) ...[
                           const SizedBox(width: 6),
-                          const Icon(Icons.workspace_premium_rounded, size: 15, color: AppColors.primary),
+                          const Icon(
+                            Icons.workspace_premium_rounded,
+                            size: 15,
+                            color: AppColors.primary,
+                          ),
                         ],
                       ],
                     ),
@@ -1066,7 +1187,9 @@ class GroupCard extends StatelessWidget {
                       '${group.memberCount} $membersLabel · 🔥 ${group.currentStreak}',
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: dark ? AppColors.darkMuted : AppColors.lightSecondaryText,
+                        color: dark
+                            ? AppColors.darkMuted
+                            : AppColors.lightSecondaryText,
                       ),
                     ),
                   ],
@@ -1074,25 +1197,36 @@ class GroupCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: groupDone
                       ? AppColors.success.withValues(alpha: 0.12)
                       : myDone
-                          ? AppColors.primary.withValues(alpha: 0.12)
-                          : (dark ? AppColors.darkSurfaceAlt : AppColors.primaryLight),
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : (dark
+                            ? AppColors.darkSurfaceAlt
+                            : AppColors.primaryLight),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  groupDone ? '✓ $doneLabel' : myDone ? '✓ $youDone' : waiting,
+                  groupDone
+                      ? '✓ $doneLabel'
+                      : myDone
+                      ? '✓ $youDone'
+                      : waiting,
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w700,
                     color: groupDone
                         ? AppColors.success
                         : myDone
-                            ? AppColors.primaryDeep
-                            : (dark ? AppColors.darkMuted : AppColors.lightSecondaryText),
+                        ? AppColors.primaryDeep
+                        : (dark
+                              ? AppColors.darkMuted
+                              : AppColors.lightSecondaryText),
                   ),
                 ),
               ),

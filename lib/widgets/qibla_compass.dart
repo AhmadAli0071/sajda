@@ -366,12 +366,12 @@ class _QiblaCompassState extends State<QiblaCompass> {
   String _kaabaLabel(BuildContext context) => widget.isUrdu ? 'کعبہ کا فاصلہ' : 'Distance to Kaaba';
 
   String _noSensorTitle(bool isUrdu) => isUrdu
-      ? 'آپ کے فون میں قطب نما سینسر (Magnetometer) نہیں ہے'
-      : "No compass sensor (Magnetometer) on this device";
+      ? 'قبلہ سینسر دستیاب نہیں'
+      : "Qibla sensor not available";
 
   String _noSensorBody(bool isUrdu) => isUrdu
-      ? '${widget.qibla.degree}° پر ثابت رخ استعمال کریں — نیچے دیا گیا ڈگری پہ کعبہ کی طرف منہ کریں۔'
-      : 'Use the fixed bearing below — face ${widget.qibla.degree}° to face the Kaaba.';
+      ? 'اس فون میں قطب نما (Magnetometer) سینسر نہیں ہے۔ ${widget.qibla.degree}° پر ثابت رخ استعمال کریں — کعبہ کی طرف منہ کریں۔'
+      : 'This phone has no compass (Magnetometer) sensor. Use the fixed bearing — face ${widget.qibla.degree}° to face the Kaaba.';
 
   String _calibrationTip(bool isUrdu) => isUrdu
       ? 'نکٹی کے لیے فون کو 8 کی شکل میں گھمائیں تاکہ قطب نما درست ہو'

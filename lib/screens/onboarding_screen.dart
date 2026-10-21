@@ -546,22 +546,27 @@ class _SlideButtonState extends State<_SlideButton> {
                       ),
                     ),
                   ),
-                  // Center label
+                  // Center label — pad both sides equally so the text
+                  // stays visually centred despite the thumb on the left.
                   Padding(
-                    padding: const EdgeInsets.only(right: _thumbSize),
+                    padding: const EdgeInsets.symmetric(horizontal: _thumbSize),
                     child: AnimatedOpacity(
                       duration: const Duration(milliseconds: 200),
                       opacity: (1 - progress * 1.4).clamp(0.0, 1.0),
                       child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          Text(
-                            widget.label,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.92),
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.6,
+                          Flexible(
+                            child: Text(
+                              widget.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.92),
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.6,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 10),

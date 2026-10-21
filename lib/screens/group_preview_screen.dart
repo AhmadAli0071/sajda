@@ -15,8 +15,13 @@ import 'join_with_code_screen.dart';
 /// deep link sajda://join/CODE). Viewer states: member | pending | declined | none.
 class GroupPreviewScreen extends StatefulWidget {
   final String inviteCode;
+  final InvitePreview? initialPreview;
 
-  const GroupPreviewScreen({super.key, required this.inviteCode});
+  const GroupPreviewScreen({
+    super.key,
+    required this.inviteCode,
+    this.initialPreview,
+  });
 
   @override
   State<GroupPreviewScreen> createState() => _GroupPreviewScreenState();
@@ -31,7 +36,13 @@ class _GroupPreviewScreenState extends State<GroupPreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    final initial = widget.initialPreview;
+    if (initial == null) {
+      _load();
+    } else {
+      _preview = initial;
+      _loading = false;
+    }
   }
 
   Future<void> _load() async {

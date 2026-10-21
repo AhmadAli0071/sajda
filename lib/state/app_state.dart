@@ -7,7 +7,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone_finder/timezone_finder.dart';
 
 import '../config.dart';
 import '../data/static_data.dart';
@@ -17,6 +16,7 @@ import '../services/auth_service.dart';
 import '../services/firebase_auth_service.dart';
 import '../services/hijri_date_service.dart';
 import '../services/prayer_notification_service.dart';
+import '../services/timezone_lookup.dart';
 
 class AppState extends ChangeNotifier with WidgetsBindingObserver {
   AppState() {
@@ -43,6 +43,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static const _kPrayerMethodManual = 'sajda_prayer_method_manual';
   static const _kContentLang = 'sajda_content_lang';
   static const _kHijriAdjust = 'sajda_hijri_adjust';
+  static const _kRamadanReminders = 'sajda_ramadan_reminders';
+  static const _kDailyReminder = 'sajda_daily_reminder';
+  static const _kDailyReminderCategory = 'sajda_daily_reminder_category';
 
   String _language = 'en'; // 'en' | 'ur' | 'ar' | 'bn' | 'id' | 'tr' | 'fa' | 'hi' | 'ms' | 'fr'
   /// Content translation language for Ayat of the Day & Adhkar
@@ -56,6 +59,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool _notificationsEnabled = false;
   bool _ayahNotificationsEnabled = false;
   bool _prayerCheckinEnabled = false;
+  bool _ramadanRemindersEnabled = true;
+  bool _dailyReminderEnabled = false;
+  String _dailyReminderCategory = 'all';
   bool _onboardingDone = false;
   bool _locationConfigured = false;
   int _quranSurah = 0;
@@ -123,6 +129,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   bool get notificationsEnabled => _notificationsEnabled;
   bool get ayahNotificationsEnabled => _ayahNotificationsEnabled;
   bool get prayerCheckinEnabled => _prayerCheckinEnabled;
+  bool get ramadanRemindersEnabled => _ramadanRemindersEnabled;
+  bool get dailyReminderEnabled => _dailyReminderEnabled;
+  String get dailyReminderCategory => _dailyReminderCategory;
   bool get onboardingDone => _onboardingDone;
   bool get locationConfigured => _locationConfigured;
   int get quranLastSurah => _quranSurah;
@@ -208,6 +217,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _notificationsEnabled = prefs.getBool(_kNotifications) ?? true;
     _ayahNotificationsEnabled = prefs.getBool(_kAyahNotifications) ?? true;
     _prayerCheckinEnabled = prefs.getBool(_kPrayerCheckin) ?? true;
+    _ramadanRemindersEnabled = prefs.getBool(_kRamadanReminders) ?? true;
+    _dailyReminderEnabled = prefs.getBool(_kDailyReminder) ?? false;
+    _dailyReminderCategory = prefs.getString(_kDailyReminderCategory) ?? 'all';
     _onboardingDone = prefs.getBool(_kOnboarding) ?? false;
     _locationConfigured = prefs.getBool(_kLocationDone) ?? false;
 
@@ -290,6 +302,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
+    // Repair persisted location state before the first frame: a timezone
+    // resolved by an older build (swapped findLocation args) can be hours
+    // off, and an auto prayer method may predate the current country table.
+    await _healStoredLocation(prefs);
+
     _loaded = true;
     notifyListeners();
     await _restoreCoords();
@@ -297,6 +314,34 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       unawaited(detectLocation(silent: true));
     }
     _setupPrayerNotificationChannel();
+  }
+
+  /// Self-heals state that earlier builds could persist incorrectly.
+  ///
+  /// 1. Re-resolves the stored location's timezone from its coordinates and
+  ///    rewrites it when the boundary lookup disagrees (it is authoritative
+  ///    for coordinates). Fixes e.g. Rahim Yar Khan stored as Europe/Oslo.
+  /// 2. Re-applies the country's auto prayer method when the user has not
+  ///    picked one manually, so corrected country defaults reach existing
+  ///    installs. Manual picks are never touched.
+  Future<void> _healStoredLocation(SharedPreferences prefs) async {
+    final loc = _location;
+    if (loc == null || (loc.latitude == 0 && loc.longitude == 0)) return;
+
+    final resolved =
+        ianaTimezoneForCoordinates(loc.latitude, loc.longitude);
+    if (resolved != null && resolved != loc.timezone) {
+      _location = loc.copyWith(timezone: resolved);
+      await prefs.setString(_kLocation, jsonEncode(_location!.toJson()));
+      ApiClient.instance.invalidatePrayerTimesCache();
+    }
+
+    if (!_prayerMethodManual) {
+      final country = _location!.country.isNotEmpty
+          ? _location!.country
+          : (_city?.country ?? '');
+      if (country.isNotEmpty) await _autoSetPrayerSettings(country);
+    }
   }
 
   static const _prayerChannel = MethodChannel('com.sajda.dataplus/prayer_notifications');
@@ -498,18 +543,20 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Resolve IANA timezone from lat/lng: offline timezone_finder first,
-  /// then the device's own timezone, finally UTC. Never hardcode a city
-  /// timezone — that broke non-Pakistani users by an hour (DST) or more.
+  /// then the device's own timezone. Never hardcode a city timezone — that
+  /// broke non-Pakistani users by an hour (DST) or more.
+  ///
+  /// Returns '' when nothing resolves. Never 'UTC': detectLocation already
+  /// treats a 'UTC' result as invalid, and asserting UTC would shift every
+  /// prayer time by the location's full offset.
   Future<String> _resolveTimezone(double lat, double lng) async {
-    try {
-      final loc = findLocation(lat, lng);
-      if (loc != null && loc.name.isNotEmpty) return loc.name;
-    } catch (_) {}
+    final resolved = ianaTimezoneForCoordinates(lat, lng);
+    if (resolved != null) return resolved;
     try {
       final tz = await FlutterTimezone.getLocalTimezone();
       if (tz.identifier.isNotEmpty) return tz.identifier;
     } catch (_) {}
-    return 'UTC';
+    return '';
   }
 
   /// Public reverse-geocode helper used by the location setup screen.
@@ -604,11 +651,18 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.setString('sajda_gps_city', '${loc.city}, ${loc.country}');
     }
 
-    // Resolve timezone FIRST, then notify
-    if (loc.timezone.isEmpty) {
-      final tz = await _resolveTimezone(loc.latitude, loc.longitude);
-      if (tz.isNotEmpty && tz != 'Asia/Karachi') {
-        _location = loc.copyWith(timezone: tz);
+    // Resolve timezone FIRST, then notify. An empty zone gets resolved here;
+    // a 'UTC' zone can only ever be a resolver/device fallback (no user
+    // selects UTC), so re-resolve it and never persist 'UTC' as a location's
+    // timezone — it shifts every prayer time by the full local offset.
+    if (loc.timezone.isEmpty || loc.timezone == 'UTC') {
+      var resolved = await _resolveTimezone(loc.latitude, loc.longitude);
+      if (resolved == 'UTC') resolved = '';
+      // Keep previous behaviour: don't overwrite the getter's own default
+      // with itself when nothing was stored (resolved == Asia/Karachi).
+      if (resolved == 'Asia/Karachi' && loc.timezone.isEmpty) resolved = '';
+      if (resolved != loc.timezone) {
+        _location = loc.copyWith(timezone: resolved);
         await prefs.setString(_kLocation, jsonEncode(_location!.toJson()));
       }
     }
@@ -756,6 +810,27 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await prefs.setBool(_kPrayerCheckin, enabled);
   }
 
+  Future<void> setRamadanRemindersEnabled(bool enabled) async {
+    _ramadanRemindersEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kRamadanReminders, enabled);
+  }
+
+  Future<void> setDailyReminderEnabled(bool enabled) async {
+    _dailyReminderEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kDailyReminder, enabled);
+  }
+
+  Future<void> setDailyReminderCategory(String category) async {
+    _dailyReminderCategory = category;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kDailyReminderCategory, category);
+  }
+
   Future<void> setPrayerNotificationMode(String prayer, String mode) async {
     _prayerNotificationModes[prayer] = mode;
     notifyListeners();
@@ -817,6 +892,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     final c = country.toLowerCase().trim();
     switch (c) {
       case 'pakistan':
+        return (1, 1); // Karachi (Univ. of Islamic Sciences) + Hanafi
       case 'india':
       case 'bangladesh':
       case 'afghanistan':

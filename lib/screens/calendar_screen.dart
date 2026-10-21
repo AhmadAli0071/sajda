@@ -540,13 +540,18 @@ class _CalendarGrid extends StatelessWidget {
                     ...names.map((n) {
                       final p =
                           times.prayers.where((x) => x.name == n).firstOrNull;
+                      final isFridayDhuhr = n == 'Dhuhr' &&
+                          greg != null &&
+                          greg.weekday == DateTime.friday;
+                      final displayName =
+                          isFridayDhuhr ? state.t('Friday', 'جمعہ') : state.t(n, n);
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Row(
                           children: [
                             Expanded(
                               child: Text(
-                                state.t(n, n),
+                                displayName,
                                 style: TextStyle(
                                     color: AppColors.textMain(isDark)),
                               ),
