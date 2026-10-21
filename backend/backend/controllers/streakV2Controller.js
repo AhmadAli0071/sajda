@@ -266,7 +266,15 @@ const flipPrayer = async (Model, filter, prayer, completed, insertExtras = {}) =
         $inc: { completedCount: 1 },
       }
     : { $set: { [prayer]: false }, $inc: { completedCount: -1 } };
-  return Model.findOneAndUpdate(match, update, { upsert: completed, new: true }).lean();
+  try {
+    return await Model.findOneAndUpdate(match, update, { upsert: completed, new: true }).lean();
+  } catch (e) {
+    // A re-tick of an already-completed prayer misses `match`, and the
+    // upsert then collides with the unique (context, user, day) index.
+    // The row already holds the state we want — return it (idempotent).
+    if (e?.code === 11000) return Model.findOne(filter).lean();
+    throw e;
+  }
 };
 
 // Day-complete is DERIVED — a day counts as complete only when ALL five
@@ -1459,6 +1467,33 @@ export const archiveGroup = async (req, res, next) => {
   }
 };
 
+// PERMANENT delete — owner only. Cascades every group-scoped row; unlike
+// archive (history preserved), this cannot be undone.
+export const deleteGroup = async (req, res, next) => {
+  try {
+    const user = await resolveUser(req);
+    const { groupId } = req.params;
+    const ctx = await requireMembership(res, groupId, user.id, { activeOnly: false });
+    if (!ctx) return;
+    if (ctx.member.role !== 'owner') {
+      return fail(res, 403, 'OWNER_ONLY', 'Only the owner can delete the group');
+    }
+    // Remove the group-scoped rows first; delete the Group last so a failed
+    // cascade never leaves an accessible group with missing history.
+    await Promise.all([
+      GroupMember.deleteMany({ groupId }),
+      GroupDailyProgress.deleteMany({ groupId }),
+      GroupDailySummary.deleteMany({ groupId }),
+      GroupActivity.deleteMany({ groupId }),
+      JoinRequest.deleteMany({ groupId }),
+    ]);
+    await Group.deleteOne({ groupId });
+    res.json({ success: true, data: { deleted: true, groupId } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─────────────────────────────────────────────────────────────────────────
 // NOTIFICATIONS (in-app feed; FCM-ready — streak never depends on them)
 // ─────────────────────────────────────────────────────────────────────────
@@ -1468,31 +1503,62 @@ export const getNotifications = async (req, res, next) => {
     const user = await resolveUser(req);
     const me = await User.findById(user.id).select('notificationsSeenAt').lean();
     const seenAt = me?.notificationsSeenAt || new Date(0);
-    const memberships = await GroupMember.find({ userId: user.id, status: 'active' }).select('groupId').lean();
+    const memberships = await GroupMember.find({ userId: user.id, status: 'active' })
+      .select('groupId role')
+      .lean();
     const groupIds = memberships.map((m) => m.groupId);
     if (groupIds.length === 0) return res.json({ success: true, data: { items: [], unread: 0 } });
+    // Pending join requests are actionable: surface them in the same bell
+    // feed (owner/admin only) so they can be approved/declined in place.
+    const adminGroupIds = memberships
+      .filter((m) => m.role === 'owner' || m.role === 'admin')
+      .map((m) => m.groupId);
     const groups = await Group.find({ groupId: { $in: groupIds } }).select('groupId name').lean();
     const nameMap = new Map(groups.map((g) => [g.groupId, g.name]));
-    const items = await GroupActivity.find({
-      groupId: { $in: groupIds },
-      userId: { $ne: new mongoose.Types.ObjectId(user.id) }, // never your own actions
-      type: { $in: ['group_day_completed', 'member_joined', 'member_left', 'member_removed'] },
-    })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .lean();
-    const unread = await GroupActivity.countDocuments({
-      groupId: { $in: groupIds },
-      userId: { $ne: new mongoose.Types.ObjectId(user.id) },
-      type: { $in: ['group_day_completed', 'member_joined', 'member_left', 'member_removed'] },
-      createdAt: { $gt: seenAt },
-    });
+    const feedTypes = ['group_day_completed', 'member_joined', 'member_left', 'member_removed'];
+    const [activity, pendingRequests, activityUnread, requestUnread] = await Promise.all([
+      GroupActivity.find({
+        groupId: { $in: groupIds },
+        userId: { $ne: new mongoose.Types.ObjectId(user.id) }, // never your own actions
+        type: { $in: feedTypes },
+      })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .lean(),
+      JoinRequest.find({ groupId: { $in: adminGroupIds }, status: 'pending' })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .lean(),
+      GroupActivity.countDocuments({
+        groupId: { $in: groupIds },
+        userId: { $ne: new mongoose.Types.ObjectId(user.id) },
+        type: { $in: feedTypes },
+        createdAt: { $gt: seenAt },
+      }),
+      JoinRequest.countDocuments({
+        groupId: { $in: adminGroupIds },
+        status: 'pending',
+        createdAt: { $gt: seenAt },
+      }),
+    ]);
+    const items = [
+      ...activity.map((a) => ({ ...activityDto(a), groupName: nameMap.get(a.groupId) || '' })),
+      ...pendingRequests.map((r) => ({
+        id: r._id,
+        groupId: r.groupId,
+        groupName: nameMap.get(r.groupId) || '',
+        userId: String(r.userId),
+        displayName: r.displayName,
+        type: 'join_request',
+        prayer: null,
+        createdAt: r.createdAt,
+      })),
+    ]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 30);
     res.json({
       success: true,
-      data: {
-        unread,
-        items: items.map((a) => ({ ...activityDto(a), groupName: nameMap.get(a.groupId) || '' })),
-      },
+      data: { unread: activityUnread + requestUnread, items },
     });
   } catch (error) {
     next(error);

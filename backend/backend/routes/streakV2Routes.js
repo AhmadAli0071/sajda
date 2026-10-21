@@ -17,6 +17,7 @@ import {
   rotateInviteCode,
   transferOwnership,
   archiveGroup,
+  deleteGroup,
   requestToJoin,
   getMyRequests,
   getGroupRequests,
@@ -75,6 +76,7 @@ router.post('/groups/:groupId/invite/rotate', W, rotateInviteCode);
 router.post('/groups/:groupId/members/:userId/remove', W, removeMember);
 router.post('/groups/:groupId/transfer', W, transferOwnership);
 router.post('/groups/:groupId/archive', W, archiveGroup);
+router.post('/groups/:groupId/delete', W, deleteGroup);
 
 // ── Notifications (in-app feed; FCM-ready) & devices ──
 router.get('/notifications', getNotifications);
